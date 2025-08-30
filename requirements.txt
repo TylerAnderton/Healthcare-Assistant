@@ -11,3 +11,4 @@ langchain-community
 langchain-ollama
 langchain-text-splitters
 openpyxl
+langchain-huggingface

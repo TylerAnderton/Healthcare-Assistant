@@ -17,7 +17,7 @@ st.caption("Ask questions about your labs, medications, and WHOOP data. Sources 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-from app.chains.chat import answer_question, has_vectorstore
+from chains.chat import answer_question, has_vectorstore
 
 if not has_vectorstore():
     st.warning("No vector index found. Please run ingestion and indexing steps (see README). The chatbot will still respond, but without document retrieval.")

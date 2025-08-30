@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langchain_core.documents import Document
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+# from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 
@@ -35,7 +36,7 @@ def build_index(corpus_dir: str, store_dir: str, embedding_model: str):
     if not docs:
         print("No corpus documents found; aborting index build.")
         return
-    embeddings = SentenceTransformerEmbeddings(model_name=embedding_model)
+    embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
     Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory=store_dir)
     print(f"Built index with {len(docs)} docs at {store_dir}")
 

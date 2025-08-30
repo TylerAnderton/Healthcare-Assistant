@@ -9,7 +9,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
 
 from langchain_ollama import ChatOllama
-from langchain_community.embeddings import SentenceTransformerEmbeddings
+# from langchain_community.embeddings import SentenceTransformerEmbeddings
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/processed/vectorstore")
@@ -35,7 +36,7 @@ def _get_llm():
 
 
 def _get_embeddings():
-    return SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
 
 def _load_vectorstore():
