@@ -8,9 +8,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from langchain_core.documents import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 # from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 
 def ensure_dir(path: str):
@@ -36,9 +37,16 @@ def build_index(corpus_dir: str, store_dir: str, embedding_model: str):
     if not docs:
         print("No corpus documents found; aborting index build.")
         return
+    # Split into smaller chunks for better recall
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=150,
+        separators=["\n\n", "\n", ". ", " "],
+    )
+    docs = splitter.split_documents(docs)
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
     Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory=store_dir)
-    print(f"Built index with {len(docs)} docs at {store_dir}")
+    print(f"Built index with {len(docs)} chunks at {store_dir}")
 
 
 if __name__ == "__main__":

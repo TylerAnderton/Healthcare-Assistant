@@ -7,8 +7,8 @@ chromadb
 sentence-transformers
 langchain
 langchain-core
-langchain-community
 langchain-ollama
 langchain-text-splitters
 openpyxl
 langchain-huggingface
+langchain-chroma

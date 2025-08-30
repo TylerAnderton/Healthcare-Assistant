@@ -3,5 +3,5 @@ SYSTEM_BASE = (
     "- Summarize clearly for non-experts.\n"
     "- Include numeric details and dates when available.\n"
     "- Cite sources and pages.\n"
-    "- Not medical advice.\n"
+    # "- Not medical advice.\n"
 )

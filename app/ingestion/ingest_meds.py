@@ -45,7 +45,7 @@ def main(src: str, out: str):
             freq = str(r.get("frequency") or r.get("freq") or r.get("dose_frequency") or "")
             freq_unit = str(r.get("frequency_unit") or r.get("dose_frequency_unit") or "")
             start = str(r.get("start_date") or r.get("date_start") or r.get("start") or "")
-            updated = str(r.get("dose_updated") or "")
+            updated = str(r.get("dose_updated") or r.get("date_updated") or r.get("updated") or r.get("date_changed") or "")
             end = str(r.get("end_date") or r.get("date_stop") or r.get("end") or "")
             current = str(r.get("current") or "")
 

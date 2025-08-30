@@ -34,7 +34,9 @@ if prompt:
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            ans, sources = answer_question(prompt)
+            # Pass prior turns (excluding the just-appended user message)
+            history = st.session_state.messages[:-1]
+            ans, sources = answer_question(prompt, history=history)
             st.markdown(ans)
             if sources:
                 with st.expander("Sources"):
