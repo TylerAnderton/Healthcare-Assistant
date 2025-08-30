@@ -2,7 +2,7 @@ import argparse
 import os
 import glob
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, UTC
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -54,7 +54,7 @@ def main(src: str, out: str):
                 "text": text,
                 "source": os.path.relpath(fp),
                 "source_type": "meds",
-                "ingested_at": datetime.utcnow().isoformat(timespec='seconds') + "Z",
+                "ingested_at": datetime.now(UTC).isoformat(timespec='seconds') + "Z",
             })
 
     if tables:
