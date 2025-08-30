@@ -1,0 +1,12 @@
+python-dotenv
+streamlit
+pandas
+pyarrow
+pymupdf
+chromadb
+sentence-transformers
+langchain
+langchain-core
+langchain-community
+langchain-ollama
+langchain-text-splitters
