@@ -25,12 +25,6 @@ except Exception:
     MAX_CONTEXT_DOCS = None
 
 _system = (
-    # "You are a careful health data assistant.\n"
-    # # "- Always include a short disclaimer: you are not providing medical advice.\n"
-    # # "- You may include a short disclaimer that you cannot legally provide medical advice; however, do your best to answer the question in a helpful manner.\n"
-    # "- Prefer citing exact numbers, dates, and ranges from retrieved sources.\n"
-    # "- If uncertain or insufficient data, say so and suggest next steps.\n"
-    # "- When analyzing over time, enumerate multiple relevant dates and highlight dose changes vs lab changes; do not rely on a single data point.\n"
     "You are a health data analysis assistant.\n"
     "- Provide educational, data-driven analysis using the provided documents and structured timelines.\n"
     "- Do not refuse; if the question is sensitive, respond with neutral, general information without directives or prescriptions.\n"
@@ -69,10 +63,6 @@ def _get_llm():
     return ChatOllama(
         model=OLLAMA_MODEL,
         base_url=OLLAMA_BASE_URL,
-        # validate_model_on_init=True,
-        # num_gpu=1,
-        # temperature=0, # No randomness for debugging
-        # verbose=True, # While debugging, show verbose output
     )
 
 
@@ -151,11 +141,7 @@ def _retrieve(query: str) -> List[Document]:
     return collected
 
 
-
-
-def answer_question(question: str, history: Optional[List[dict]] = None) -> Tuple[str, List[str]]:
-    docs = _retrieve(question)
-    # Build richer context with lightweight headers to orient the model
+def _build_context(docs: List[Document]) -> str:
     def fmt(d: Document) -> str:
         m = d.metadata or {}
         src = m.get("source", "unknown")
@@ -177,6 +163,13 @@ def answer_question(question: str, history: Optional[List[dict]] = None) -> Tupl
     if docs:
         context_parts.append("\n\n".join([fmt(d) for d in docs]))
     context = "\n\n".join(context_parts)
+    return context
+
+
+def answer_question(question: str, history: Optional[List[dict]] = None) -> Tuple[str, List[str]]:
+    docs = _retrieve(question)
+
+    context = _build_context(docs)
 
     sources = []
     for d in docs:
@@ -193,11 +186,14 @@ def answer_question(question: str, history: Optional[List[dict]] = None) -> Tupl
     prompt_msgs: List[tuple] = [
         ("system", _system + "\nContext from documents (if any):\n" + context)
     ]
+
     # Include the few-shot after system but before real history
     prompt_msgs.append(("human", "Example: How did my dose changes relate to later lab results?"))
     prompt_msgs.append(("assistant", "Example analysis (educational):\n- Identify dates of dose start/changes and corresponding lab dates.\n- Summarize trends (e.g., dose increase preceded level increase/decrease by N days).\n- Cite sources or timeline items with dates; avoid directives or personalized medical advice."))
+
     # Append prior conversation turns
     prompt_msgs.extend(hist_msgs)
+
     # Current user question
     prompt_msgs.append(("human", f"Question: {question}"))
 
@@ -205,9 +201,5 @@ def answer_question(question: str, history: Optional[List[dict]] = None) -> Tupl
     llm = _get_llm()
     chain = dynamic_prompt | llm | StrOutputParser()
     answer = chain.invoke({})
-
-    # # Ensure disclaimer present
-    # if "medical advice" not in answer.lower():
-    #     answer += "\n\nNote: I am not providing medical advice; use this information for education and discuss with a clinician."
 
     return answer, sources
