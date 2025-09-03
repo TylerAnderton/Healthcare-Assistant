@@ -1,6 +1,12 @@
 import re
 from typing import List, Dict, Optional, Tuple
 import fitz  # PyMuPDF
+try:
+    import pytesseract  # optional OCR
+    from PIL import Image
+    HAVE_OCR = True
+except Exception:
+    HAVE_OCR = False
 
 DATE_PATTERNS = [
     re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d{2})\b"),  # MM/DD/YYYY
@@ -117,28 +123,58 @@ def _parse_value_and_flag(text: str) -> Tuple[Optional[float], Optional[str]]:
 
 def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     date = extract_report_date(doc, filepath)
+    print(f"Extracting rows from {filepath}")
+    print(f"Date: {date}")
     out: List[Dict] = []
+
+    def _page_lines_text(p: fitz.Page) -> List[str]:
+        t = p.get_text("text") or ""
+        return [ln.strip() for ln in t.splitlines() if ln.strip()]
+
+    def _looks_like_accessibility_boxes(lines: List[str]) -> bool:
+        if not lines:
+            return False
+        hits = sum(1 for ln in lines if ln.lower().startswith("text box"))
+        return hits / max(1, len(lines)) > 0.3 or any("Ref Range:" in ln for ln in lines)
+
+    def _page_lines_ocr(p: fitz.Page) -> List[str]:
+        if not HAVE_OCR:
+            return []
+        # Render at 2x for better OCR
+        pm = p.get_pixmap(matrix=fitz.Matrix(2, 2))
+        mode = "RGB" if pm.n >= 3 else "L"
+        img = Image.frombytes(mode, (pm.width, pm.height), pm.samples)
+        text = pytesseract.image_to_string(img)
+        return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    prev_line: Optional[str] = None
     for pi, page in enumerate(doc, start=1):
-        # Heuristic parse: accept lines that look like result rows
-        words = _words_with_bbox(page)
-        lines = _group_lines(words)
+        # First try text; if it looks like accessibility placeholders, OCR fallback
+        lines = _page_lines_text(page)
+        if _looks_like_accessibility_boxes(lines) and HAVE_OCR:
+            ocr_lines = _page_lines_ocr(page)
+            if ocr_lines:
+                lines = ocr_lines
+
+        # Primary: parse by lines directly
         for ln in lines:
-            line_text = " ".join(w for w, _ in ln)
+            line_text = ln
             if not any(u in line_text for u in UNIT_TOKENS):
+                prev_line = line_text
                 continue
             rl, rh = _parse_ref_range(line_text)
-            # Also accept if range isn't present but a value and unit are
             val, flag = _parse_value_and_flag(line_text)
             unit = next((u for u in UNIT_TOKENS if u in line_text), None)
             if unit is None or val is None:
+                prev_line = line_text
                 continue
-            # analyte = text before first numeric value
+            # analyte before first number; if too short, look to prev line
             m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", line_text)
-            if not m:
-                continue
-            analyte = m.group(1).strip(" :")
-            # Basic noise filter: skip very short analyte labels
+            analyte = (m.group(1).strip(" :") if m else "")
+            if len(analyte) < 2 and prev_line:
+                analyte = prev_line.strip(" :")
             if len(analyte) < 2:
+                prev_line = line_text
                 continue
             out.append({
                 "analyte": analyte,
@@ -151,4 +187,35 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
                 "page": pi,
                 "vendor": "LetsGetChecked",
             })
+            prev_line = line_text
+
+        # Secondary: if nothing found on page, try bbox heuristic as a fallback
+        if not any(r.get("page") == pi for r in out):
+            words = _words_with_bbox(page)
+            lines_b = _group_lines(words)
+            for ln in lines_b:
+                line_text = " ".join(w for w, _ in ln)
+                if not any(u in line_text for u in UNIT_TOKENS):
+                    continue
+                rl, rh = _parse_ref_range(line_text)
+                val, flag = _parse_value_and_flag(line_text)
+                unit = next((u for u in UNIT_TOKENS if u in line_text), None)
+                if unit is None or val is None:
+                    continue
+                m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", line_text)
+                analyte = (m.group(1).strip(" :") if m else "")
+                if len(analyte) < 2:
+                    continue
+                out.append({
+                    "analyte": analyte,
+                    "value": val,
+                    "unit": unit,
+                    "ref_low": rl,
+                    "ref_high": rh,
+                    "flag": flag,
+                    "date": date,
+                    "page": pi,
+                    "vendor": "LetsGetChecked",
+                })
+
     return out

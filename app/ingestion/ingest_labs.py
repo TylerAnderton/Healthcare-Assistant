@@ -12,6 +12,7 @@ load_dotenv()
 from app.ingestion.utils_pdf import extract_pdf_pages
 from app.ingestion.vendors import labcorp as v_labcorp
 from app.ingestion.vendors import letsgetchecked as v_lgc
+from app.ingestion.vendors import ways2well as v_w2w
 
 
 def ensure_dirs(base_out: str):
@@ -22,9 +23,14 @@ def ensure_dirs(base_out: str):
 def detect_vendor(filepath: str, first_page_text: str) -> Optional[str]:
     name = os.path.basename(filepath).lower()
     if name.startswith("labcorp_") or "date collected" in first_page_text.lower(): # "date collected" might not be the best to use
+        print(f"Detected LabCorp: {filepath}")
         return "labcorp"
-    if "letsgetchecked" in name or "lets get checked" in first_page_text.lower() or "letsgetchecked" in first_page_text.lower():
+    if "letsgetchecked" in name or "lets_get_checked" in name:
+        print(f"Detected LetsGetChecked: {filepath}")
         return "letsgetchecked"
+    if "ways2well" in name or "ways2well" in first_page_text.lower():
+        print(f"Detected Ways2Well: {filepath}")
+        return "ways2well"
     return None
 
 
@@ -57,8 +63,11 @@ def main(src: str, out: str):
                 if vendor == "labcorp":
                     vendor_rows = v_labcorp.extract_rows(doc, fp)
                 elif vendor == "letsgetchecked":
-                    vendor_rows = v_lgc.extract_rows(doc, fp)
+                    # vendor_rows = v_lgc.extract_rows(doc, fp)
+                    vendor_rows = [] # TODO: improve LetsGetChecked parsing
                 # TODO: ways2well
+                elif vendor == "ways2well":
+                    vendor_rows = v_w2w.extract_rows(doc, fp)
                 else:
                     vendor_rows = []
                 # Normalize and attach common fields
@@ -92,7 +101,7 @@ def main(src: str, out: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    default_src = os.path.join(os.getenv("DATA_DIR", "./data"), "labs")
+    default_src = os.path.join(os.getenv("DATA_DIR", "./data/raw"), "labs")
     parser.add_argument("--src", default=default_src)
     parser.add_argument("--out", default=os.getenv("PROCESSED_DIR", "./data/processed"))
     args = parser.parse_args()
