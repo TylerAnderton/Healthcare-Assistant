@@ -90,7 +90,19 @@ def main(src: str, out: str):
     if structured_rows:
         tdf = pd.DataFrame(structured_rows)
         # Ensure columns exist
-        for col in ["analyte", "value", "unit", "ref_low", "ref_high", "date", "source", "page", "source_type", "vendor", "flag"]:
+        for col in [
+            "analyte",
+            "value",
+            "unit",
+            "ref_low",
+            "ref_high",
+            "date",
+            "source",
+            "page",
+            "source_type",
+            "vendor",
+            "flag",
+        ]:
             if col not in tdf.columns:
                 tdf[col] = None
         tdf.to_parquet(os.path.join(out, "tables", "labs.parquet"))

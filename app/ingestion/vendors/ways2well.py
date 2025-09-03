@@ -26,6 +26,7 @@ UNIT_TOKENS = [
     "%", "ng/mL", "pg/mL", "mg/dL", "g/dL", "µIU/mL", "uIU/mL", "mIU/L", "IU/L", "U/L",
     "mmol/L", "umol/L", "μmol/L", "nmol/L", "fL", "pg", "ng/dL", "mcg/dL", "ug/dL", "µg/dL",
     "10^3/uL", "10^3/µL", "10^9/L", "10^6/uL", "10^6/µL", "10^12/L", "cells/uL", "k/uL",
+    "/uL", "/µL", "/L", "x10^3/uL", "x10^3/µL",
 ]
 
 FLAG_TOKENS = {"H", "High", "L", "Low"}
@@ -132,11 +133,11 @@ def _parse_value_unit(text: str) -> Tuple[Optional[float], Optional[str]]:
         return None, None
     val = float(mval.group(0))
     unit = None
-    lower = text
+    lower = text.lower()
     # find first unit token after the value index
     start_idx = mval.end()
     for u in UNIT_TOKENS:
-        pos = lower.find(u, start_idx)
+        pos = lower.find(u.lower(), start_idx)
         if pos != -1:
             if unit is None or pos < lower.find(unit, start_idx):
                 unit = u
@@ -153,6 +154,46 @@ def _candidate_line(line: str) -> bool:
         return False
     return True
 
+
+# Actual box character:  
+BOXLIKE_CHARS = "■□☐☑☒●○•▪▫◻◼▢❑▣▮▯" + "\uf0a0\uf0a1\uf0a2"  # include a few common private-use glyphs
+BOXLIKE_RE = re.compile("[" + re.escape(BOXLIKE_CHARS) + "]+")
+
+
+def _filter_analyte(text: str) -> Optional[str]:
+    if re.search(BOXLIKE_RE, text):
+        text = re.sub(BOXLIKE_RE, "", text)
+        return text.strip()
+    return None
+
+
+def _clean_analyte(text: str) -> str:
+    s = text
+    for ch in BOXLIKE_CHARS:
+        s = s.replace(ch, " ")
+    # Remove lingering 'Text box' artifacts if any slipped in
+    s = re.sub(r"(?i)text\s+box.*", " ", s)
+    # Collapse spaces and strip punctuation at ends
+    s = re.sub(r"\s+", " ", s).strip(" :.-\t")
+    return s
+
+
+def _extract_analyte_via_boxmark(text: str) -> Optional[str]:
+    """Return analyte trimmed to end before the last box-like glyph.
+    If no glyph is found, return None to indicate this line likely isn't an analyte row.
+    """
+    last = None
+    for m in BOXLIKE_RE.finditer(text):
+        last = m
+    if not last:
+        return None
+    # Text before the first box glyph in the last group
+    analyte = text[: last.start()].rstrip()
+    analyte = _clean_analyte(analyte)
+    return analyte if analyte else None
+
+
+# --- Main entry point ---
 
 def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     date = extract_report_date(doc, filepath)
@@ -209,7 +250,11 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
             analyte = (m.group(1).strip(" :") if m else "")
             if len(analyte) < 2 and prev_line:
                 analyte = prev_line.strip(" :")
-            if len(analyte) < 2:
+
+            # analyte = _extract_analyte_via_boxmark(analyte)
+            analyte = _filter_analyte(analyte)
+            analyte = _clean_analyte(analyte) if analyte else None
+            if not analyte or len(analyte) < 2:
                 prev_line = ln
                 continue
 
