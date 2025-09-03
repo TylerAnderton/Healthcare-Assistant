@@ -202,6 +202,7 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     # Locate the start page of the detailed results section
     start_page: Optional[int] = None
     for i, page in enumerate(doc):
+        print(f"Processing page {i}")
         lines = _page_lines_text(page)
         if _looks_like_accessibility_boxes(lines) and HAVE_OCR:
             olines = _page_lines_ocr(page)
@@ -209,6 +210,9 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
                 lines = olines
         joined = "\n".join(lines)
         if re.search(r"Blood\s+Test\s+Results\s+Comparative", joined, re.IGNORECASE):
+            # "Blood Test Results Comparative" is being found in another section in the 20230603 report on page 4
+            print(f"Found Blood Test Results Comparative on page {i}")
+            print(f"Page lines: {lines}")
             start_page = i
             break
 
@@ -226,13 +230,22 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
                 lines = olines
 
         # Stop when the next section header is encountered
+        # "Blood Test Score Report" is only present in the 20230603 report
+        # "Blood Test History" is the following secion in other reports; however, it may appear on page headers
+        ## It looks like "Blood Test" and "History" are being read as separate lines, so the following still works
         header_hit = any(
+            # re.search(r"Blood\s+Test\s+Score\s+Report|Blood\s+Test\s+History", ln, re.IGNORECASE) for ln in lines
             re.search(r"Blood\s+Test\s+Score\s+Report", ln, re.IGNORECASE) for ln in lines
         )
         if header_hit:
+            print(f"Found Blood Test Score Report on page {pi}")
             break
 
+        print(f"Processing page {pi}")
+        print(f"Page lines: {lines}")
+
         # Parse candidate lines
+        # TODO: Each word/item is being read as a separate line. Need to figure out how to intelligently concatenate lines before parsing.
         prev_line: Optional[str] = None
         for ln in lines:
             if not _candidate_line(ln):
