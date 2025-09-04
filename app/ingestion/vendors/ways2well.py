@@ -23,11 +23,35 @@ MONTHS = {
 }
 
 UNIT_TOKENS = [
-    "%", "ng/mL", "pg/mL", "mg/dL", "g/dL", "µIU/mL", "uIU/mL", "mIU/L", "IU/L", "U/L",
-    "mmol/L", "umol/L", "μmol/L", "nmol/L", "fL", "pg", "ng/dL", "mcg/dL", "ug/dL", "µg/dL",
-    "10^3/uL", "10^3/µL", "10^9/L", "10^6/uL", "10^6/µL", "10^12/L", "cells/uL", "k/uL",
+    "%",
+    # Mass/volume with case variants commonly seen in PDFs
+    "ng/mL", "pg/mL", "mg/dL", "g/dL", "ng/dL", "ng/ml", "mg/dl", "g/dl",
+    # Immuno and enzyme units
+    "µIU/mL", "uIU/mL", "µIU/ml", "uIU/ml", "µU/mL", "µU/ml", "mIU/L", "IU/L", "U/L", "IU/l",
+    # Electrolytes and misc.
+    "mEq/L", "mL/min/1.73m2",
+    # Moles
+    "mmol/L", "umol/L", "μmol/L", "nmol/L",
+    # Cell sizes/counts
+    "fL", "pg", "10^3/uL", "10^3/µL", "10^9/L", "10^6/uL", "10^6/µL", "10^12/L", "cells/uL", "k/uL", "m/cumm",
+    # Alternate scientific notation variants seen in some reports
+    "10E3/µL", "10E3/uL", "10e3/µL", "10e3/uL",
+    # Generic per-volume fallbacks
     "/uL", "/µL", "/L", "x10^3/uL", "x10^3/µL",
+    # Ratio/index style
+    "Ratio", "ratio", "Index", "index",
 ]
+
+units_lc = {u.lower() for u in UNIT_TOKENS}
+arrow_re = re.compile(r"[\uf05d\uf045]")  # up/down arrow-like glyphs to ignore inside tokens
+ign_exact = {"\uf513", "\uf511", "\uf05d", "\uf045"}  # flag & arrow emoji tokens to ignore entirely
+header_stop = {t.lower() for t in [
+    "biomarker", "quest", "current", "previous", "optimal", "range", "standard", "units",
+    "blood", "test", "results", "comparative", "history", "score", "report", "out", "of"
+]}
+
+num_re = re.compile(r"-?\d+(?:\.\d+)?")
+range_re = re.compile(r"(-?\d+(?:\.\d+)?)\s*[-–—]\s*(-?\d+(?:\.\d+)?)")
 
 FLAG_TOKENS = {"H", "High", "L", "Low"}
 
@@ -193,6 +217,88 @@ def _extract_analyte_via_boxmark(text: str) -> Optional[str]:
     return analyte if analyte else None
 
 
+def _clean_tok(t: str) -> str:
+    # Remove arrow glyphs and collapse whitespace
+    t = arrow_re.sub("", t).strip()
+    return re.sub(r"\s+", " ", t)
+
+# def _try_parse_range(tokens: List[str], idx: int) -> Optional[Tuple[float, float, int]]:
+#     # Attempt 3-token, then 2-token, then 1-token range parsing.
+#     parts = [_clean_tok(tokens[idx])]
+#     if idx + 1 < len(tokens):
+#         parts.append(parts[0] + " " + _clean_tok(tokens[idx + 1]))
+#     if idx + 2 < len(tokens):
+#         parts.append(parts[1] + " " + _clean_tok(tokens[idx + 2]))
+#     # Check longest first
+#     for consumed, s in ((3, parts[-1]) if len(parts) == 3 else (0, None), (2, parts[1] if len(parts) >= 2 else None), (1, parts[0])):
+#         if not s:
+#             continue
+#         m = range_re.search(s)
+#         if m:
+#             low, high = float(m.group(1)), float(m.group(2))
+#             return low, high, idx + consumed
+#     return None
+
+def _try_parse_range(token: str) -> Optional[Tuple[float, float]]:
+    # Ranges are always a single token
+    m = range_re.search(token)
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    return None
+    
+
+def _parse_values(value_tokens: List[str]) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], Optional[float], Optional[float]]:
+    prev_v: Optional[float] = None
+    curr_v: Optional[float] = None
+    opt_l: Optional[float] = None
+    opt_h: Optional[float] = None
+    std_l: Optional[float] = None
+    std_h: Optional[float] = None
+    i = 0
+    while i < len(value_tokens):
+        # Skip empty or pure glyph tokens
+        tk = value_tokens[i]
+        if not tk or tk in ign_exact:
+            i += 1
+            continue
+
+        # First, try to parse a range spanning up to 3 tokens -- no, ranges are always a single token
+        # rng = _try_parse_range(value_tokens, i)
+        # if rng:
+        #     low, high, new_i = rng
+        #     if opt_l is None and opt_h is None:
+        #         opt_l, opt_h = low, high
+        #     elif std_l is None and std_h is None:
+        #         std_l, std_h = low, high
+        #     i = new_i
+        #     continue
+        rng = _try_parse_range(tk)
+        if rng:
+            if opt_l is None and opt_h is None:
+                opt_l, opt_h = rng
+            elif std_l is None and std_h is None:
+                std_l, std_h = rng
+            i += 1
+            continue
+
+        # Else, try single numeric value
+        m = num_re.search(tk)
+        if m:
+            val = float(m.group(0))
+            if prev_v is None:
+                prev_v = val
+            elif curr_v is None:
+                curr_v = val
+            # Any further numerics are ignored for robustness
+        i += 1
+
+    # If only one numeric was found, it's the current value (no previous reported)
+    if curr_v is None and prev_v is not None:
+        curr_v, prev_v = prev_v, None
+
+    return prev_v, curr_v, opt_l, opt_h, std_l, std_h
+
+
 # --- Main entry point ---
 
 def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
@@ -220,7 +326,7 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
         # No section found; return empty
         return out
 
-    in_section = True
+    # in_section = True
     for pi in range(start_page, doc.page_count):
         page = doc[pi]
         lines = _page_lines_text(page)
@@ -229,85 +335,78 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
             if olines:
                 lines = olines
 
-        # Stop when the next section header is encountered
-        # "Blood Test Score Report" is only present in the 20230603 report
-        # "Blood Test History" is the following secion in other reports; however, it may appear on page headers
-        ## It looks like "Blood Test" and "History" are being read as separate lines, so the following still works
-        header_hit = any(
-            # re.search(r"Blood\s+Test\s+Score\s+Report|Blood\s+Test\s+History", ln, re.IGNORECASE) for ln in lines
-            re.search(r"Blood\s+Test\s+Score\s+Report", ln, re.IGNORECASE) for ln in lines
-        )
+        # Stop when the next section header is encountered. Join lines because tokens may be split.
+        joined = "\n".join(lines)
+        # header_hit = bool(re.search(r"Blood\s+Test\s+Score\s+Report|Blood\s+Test\s+History", joined, re.IGNORECASE))
+        blood_test_score_report_sent = r"This\s+report\s+shows\s+the\s+biomarkers\s+on\s+the\s+blood\s+test\s+that\s+are\s+farthest\s+from\s+the\s+median\s+expressed\s+as\s+a\s+\%"
+        blood_test_history_sent = r"The\s+Blood\s+Test\s+History\s+Report\s+lists\s+the\s+results\s+of\s+your\s+patient's\s+Chemistry"
+        header_hit = bool(re.search(blood_test_score_report_sent, joined, re.IGNORECASE)) or bool(re.search(blood_test_history_sent, joined, re.IGNORECASE))
         if header_hit:
-            print(f"Found Blood Test Score Report on page {pi}")
+            print(f"Found next section header on page {pi}")
             break
 
         print(f"Processing page {pi}")
         print(f"Page lines: {lines}")
 
-        # Parse candidate lines
-        # TODO: Each word/item is being read as a separate line. Need to figure out how to intelligently concatenate lines before parsing.
-        prev_line: Optional[str] = None
-        full_lines: List[str] = []
-        current_line: List[str] = []
+        # Token-by-token parsing across the page; each "line" item is effectively a word/token.
+        # Strategy:
+        # - Detect start of a row by an analyte token ending with the box-like glyph (e.g., '\xa0\uf03d').
+        # - Accumulate subsequent tokens until a Units token is found; ignore flag/arrow glyphs.
+        # - Within the accumulated tokens, extract [previous?], current value, optimal range, [standard range].
+
         parsing_line = False
-        for ln in lines:
-            # if not _candidate_line(ln):
-            #     prev_line = ln
-            #     continue
+        analyte: Optional[str] = None
+        row_tokens: List[str] = []
+        # pre_analyte_buf: List[str] = []  # keep last few tokens to assemble multi-token analyte names
 
-            # rl, rh = _parse_ref_range(ln)
-            # val, unit = _parse_value_unit(ln)
-            # if unit is None or val is None:
-            #     prev_line = ln
-            #     continue
+        for tok in lines:
+            if tok in ign_exact:
+                continue
 
-            # # Analyte is the text before the value
-            # m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", ln)
-            # analyte = (m.group(1).strip(" :") if m else "")
-            # if len(analyte) < 2 and prev_line:
-            #     analyte = prev_line.strip(" :")
-
-            # # analyte = _extract_analyte_via_boxmark(analyte)
-            # analyte = _filter_analyte(analyte)
-            # analyte = _clean_analyte(analyte) if analyte else None
-            # if not analyte or len(analyte) < 2:
-            #     prev_line = ln
-            #     continue
-
-            # out.append({
-            #     "analyte": analyte,
-            #     "value": val,
-            #     "unit": unit,
-            #     "ref_low": rl,
-            #     "ref_high": rh,
-            #     "flag": None,
-            #     "date": date,
-            #     "page": pi + 1,
-            #     "vendor": "Ways2Well",
-            # })
-            # prev_line = ln
-            
             if not parsing_line:
-                # parsing_line = _check_analyte(ln)
-                # m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", ln)
-                # analyte = (m.group(1).strip(" :") if m else "")
-                # if len(analyte) < 2 and prev_line:
-                #     analyte = prev_line.strip(" :")
-
-                # Check for analyte to start parsing
-                analyte = _filter_analyte(ln)
-                analyte = _clean_analyte(analyte) if analyte else None
-                if not analyte or len(analyte) < 2:
-                    # prev_line = ln
+                a_tail = _filter_analyte(tok)
+                if a_tail:
+                    # Build analyte from preceding context tokens + this tail
+                    a_full = _clean_analyte(a_tail)
+                    if a_full and len(a_full) >= 2:
+                        parsing_line = True
+                        analyte = a_full
+                        row_tokens = [analyte]
+                        print(f"Found analyte: {analyte}")
                     continue
-                else:
-                    parsing_line = True
-                    current_line.append(analyte)
-                    print(f"Found analyte: {analyte}")
-                    continue
+                continue
 
-            if parsing_line:
-                # TODO: Parse the rest of the line, stopping when the unit is found
+            # Inside a row: accumulate until we hit a units token
+            ctk = _clean_tok(tok)
+            if not ctk:
+                continue
+            # Units token marks end-of-row
+            if ctk.lower() in units_lc:
+                unit = ctk.strip()
+                prev_v, curr_v, opt_l, opt_h, std_l, std_h = _parse_values(row_tokens)
+                # Prefer optimal range; fall back to standard if optimal missing
+                rl, rh = (opt_l, opt_h) if (opt_l is not None or opt_h is not None) else (std_l, std_h)
+                if curr_v is not None:
+                    out.append({
+                        "analyte": analyte,
+                        "value": curr_v,
+                        "unit": unit,
+                        "ref_low": rl,
+                        "ref_high": rh,
+                        "flag": None,
+                        "date": date,
+                        "page": pi + 1,
+                        "vendor": "Ways2Well",
+                    })
+
+                # Reset for potential next row on the same page
+                parsing_line = False
+                analyte = None
+                row_tokens = []
+                continue
+
+            # Otherwise accumulate token for later parsing
+            row_tokens.append(ctk)
 
 
     return out
