@@ -202,7 +202,7 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     # Locate the start page of the detailed results section
     start_page: Optional[int] = None
     for i, page in enumerate(doc):
-        print(f"Processing page {i}")
+        print(f"Searching page {i}")
         lines = _page_lines_text(page)
         if _looks_like_accessibility_boxes(lines) and HAVE_OCR:
             olines = _page_lines_ocr(page)
@@ -212,7 +212,7 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
         if re.search(r"Blood\s+Test\s+Results\s+Comparative", joined, re.IGNORECASE):
             # "Blood Test Results Comparative" is being found in another section in the 20230603 report on page 4
             print(f"Found Blood Test Results Comparative on page {i}")
-            print(f"Page lines: {lines}")
+            # print(f"Page lines: {lines}")
             start_page = i
             break
 
@@ -247,41 +247,67 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
         # Parse candidate lines
         # TODO: Each word/item is being read as a separate line. Need to figure out how to intelligently concatenate lines before parsing.
         prev_line: Optional[str] = None
+        full_lines: List[str] = []
+        current_line: List[str] = []
+        parsing_line = False
         for ln in lines:
-            if not _candidate_line(ln):
-                prev_line = ln
-                continue
+            # if not _candidate_line(ln):
+            #     prev_line = ln
+            #     continue
 
-            rl, rh = _parse_ref_range(ln)
-            val, unit = _parse_value_unit(ln)
-            if unit is None or val is None:
-                prev_line = ln
-                continue
+            # rl, rh = _parse_ref_range(ln)
+            # val, unit = _parse_value_unit(ln)
+            # if unit is None or val is None:
+            #     prev_line = ln
+            #     continue
 
-            # Analyte is the text before the value
-            m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", ln)
-            analyte = (m.group(1).strip(" :") if m else "")
-            if len(analyte) < 2 and prev_line:
-                analyte = prev_line.strip(" :")
+            # # Analyte is the text before the value
+            # m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", ln)
+            # analyte = (m.group(1).strip(" :") if m else "")
+            # if len(analyte) < 2 and prev_line:
+            #     analyte = prev_line.strip(" :")
 
-            # analyte = _extract_analyte_via_boxmark(analyte)
-            analyte = _filter_analyte(analyte)
-            analyte = _clean_analyte(analyte) if analyte else None
-            if not analyte or len(analyte) < 2:
-                prev_line = ln
-                continue
+            # # analyte = _extract_analyte_via_boxmark(analyte)
+            # analyte = _filter_analyte(analyte)
+            # analyte = _clean_analyte(analyte) if analyte else None
+            # if not analyte or len(analyte) < 2:
+            #     prev_line = ln
+            #     continue
 
-            out.append({
-                "analyte": analyte,
-                "value": val,
-                "unit": unit,
-                "ref_low": rl,
-                "ref_high": rh,
-                "flag": None,
-                "date": date,
-                "page": pi + 1,
-                "vendor": "Ways2Well",
-            })
-            prev_line = ln
+            # out.append({
+            #     "analyte": analyte,
+            #     "value": val,
+            #     "unit": unit,
+            #     "ref_low": rl,
+            #     "ref_high": rh,
+            #     "flag": None,
+            #     "date": date,
+            #     "page": pi + 1,
+            #     "vendor": "Ways2Well",
+            # })
+            # prev_line = ln
+            
+            if not parsing_line:
+                # parsing_line = _check_analyte(ln)
+                # m = re.search(r"(.*?)(-?\d+(?:\.\d+)?)", ln)
+                # analyte = (m.group(1).strip(" :") if m else "")
+                # if len(analyte) < 2 and prev_line:
+                #     analyte = prev_line.strip(" :")
+
+                # Check for analyte to start parsing
+                analyte = _filter_analyte(ln)
+                analyte = _clean_analyte(analyte) if analyte else None
+                if not analyte or len(analyte) < 2:
+                    # prev_line = ln
+                    continue
+                else:
+                    parsing_line = True
+                    current_line.append(analyte)
+                    print(f"Found analyte: {analyte}")
+                    continue
+
+            if parsing_line:
+                # TODO: Parse the rest of the line, stopping when the unit is found
+
 
     return out
