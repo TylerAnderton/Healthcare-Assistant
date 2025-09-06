@@ -21,8 +21,10 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 _max_docs_env = os.getenv("MAX_CONTEXT_DOCS")
 try:
     MAX_CONTEXT_DOCS = int(_max_docs_env) if _max_docs_env else None
+    MAX_DOCS_PER_RETRIEVER = int(os.getenv("MAX_DOCS_PER_RETRIEVER", "12"))
 except Exception:
     MAX_CONTEXT_DOCS = None
+    MAX_DOCS_PER_RETRIEVER = 12
 
 _system = (
     "You are a health data analysis assistant.\n"
@@ -99,8 +101,8 @@ def _retrieve(query: str) -> List[Document]:
         return _VECTORSTORE.as_retriever(
             search_type="mmr", # Balances relevance to the query vs. diversity among the returned documents.
             search_kwargs={
-                "k": 20, # Number of documents to return.
-                "fetch_k": 60, # Number of documents to fetch before deduplication.
+                "k": MAX_DOCS_PER_RETRIEVER, # Number of documents to return.
+                "fetch_k": MAX_DOCS_PER_RETRIEVER * 3, # Number of documents to fetch before deduplication.
                 "lambda_mult": 0.5, # Diversity of results returned by MMR; 1 minimum, 0 maximum. 
                 **({"filter": filter_} if filter_ else {}),
             },
