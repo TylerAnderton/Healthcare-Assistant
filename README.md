@@ -21,11 +21,11 @@ A local-first chatbot to understand your healthcare data (labs PDFs, medications
 3. Configure env
    - `cp .env.example .env` and adjust if needed
 4. Ingest data
-   - `python app/ingestion/ingest_labs.py --src ./data/labs --out ./data/processed`
-   - `python app/ingestion/ingest_meds.py --src ./data/medications --out ./data/processed`
-   - `python app/ingestion/ingest_whoop.py --src ./data/whoop --out ./data/processed`
+   - `python -m app.ingestion.ingest_labs`
+   - `python -m app.ingestion.ingest_meds`
+   - `python -m app.ingestion.ingest_whoop`
 5. Build index
-   - `python app/indexing/build_index.py --corpus ./data/processed/corpus --store ./data/processed/vectorstore`
+   - `python -m app.indexing.build_index`
 6. Run UI
    - `streamlit run app/app.py`
 
