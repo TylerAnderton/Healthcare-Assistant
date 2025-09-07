@@ -13,6 +13,7 @@ from app.ingestion.utils_pdf import extract_pdf_pages
 from app.ingestion.vendors import labcorp as v_labcorp
 from app.ingestion.vendors import letsgetchecked as v_lgc
 from app.ingestion.vendors import ways2well as v_w2w
+from scripts.print_ocr_env import main as print_ocr_env_main
 
 
 def ensure_dirs(base_out: str):
@@ -35,6 +36,11 @@ def detect_vendor(filepath: str, first_page_text: str) -> Optional[str]:
 
 
 def main(src: str, out: str):
+    # Log OCR environment once at startup for easier debugging across OSes
+    try:
+        print_ocr_env_main()
+    except Exception as e:
+        print("OCR env diagnostic failed:", e)
     ensure_dirs(out)
     corpus_rows: List[Dict] = []
     structured_rows: List[Dict] = []
