@@ -40,10 +40,10 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     for i, page in enumerate(doc):
         # print(f"Searching page {i}")
         lines = page_lines_text(page)
-        if looks_like_accessibility_boxes(lines) and HAVE_OCR:
-            olines = page_lines_ocr(page)
-            if olines:
-                lines = olines
+        # if looks_like_accessibility_boxes(lines) and HAVE_OCR:
+        #     olines = page_lines_ocr(page)
+        #     if olines:
+        #         lines = olines
         joined = "\n".join(lines)
         if re.search(r"Blood\s+Test\s+Results\s+Comparative", joined, re.IGNORECASE):
             # "Blood Test Results Comparative" is being found in another section in the 20230603 report on page 4
@@ -60,10 +60,10 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     for pi in range(start_page, doc.page_count):
         page = doc[pi]
         lines = page_lines_text(page)
-        if looks_like_accessibility_boxes(lines) and HAVE_OCR:
-            olines = page_lines_ocr(page)
-            if olines:
-                lines = olines
+        # if looks_like_accessibility_boxes(lines) and HAVE_OCR:
+        #     olines = page_lines_ocr(page)
+        #     if olines:
+        #         lines = olines
 
         # Stop when the next section header is encountered. Join lines because tokens may be split.
         joined = "\n".join(lines)
