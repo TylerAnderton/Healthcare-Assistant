@@ -21,6 +21,7 @@ def ensure_dir(path: str):
 def load_corpus(corpus_dir: str) -> List[Document]:
     docs: List[Document] = []
     for fp in glob.glob(os.path.join(corpus_dir, "*.parquet")):
+        print(f"Loading corpus from {fp}")
         df = pd.read_parquet(fp)
         for _, row in df.iterrows():
             text = str(row.get("text", ""))

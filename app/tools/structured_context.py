@@ -8,6 +8,7 @@ import os
 from typing import List, Optional
 import pandas as pd
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 
 def _safe_str(x) -> str:
@@ -124,5 +125,87 @@ def load_meds_timeline(
                 ] if s
             ])
             lines.append(f"  - {e['date']} {e['kind']}{(': ' + details) if details else ''}")
+
+    return "\n".join(lines)
+
+
+def load_labs_panel(
+    max_rows: int = 25,
+    processed_dir: Optional[str] = None,
+    table_path: Optional[str] = None,
+) -> str:
+    """Build a compact snapshot of the most recent lab panel from tables/labs.parquet.
+
+    Returns a text block suitable for inclusion in the RAG context.
+    """
+    if table_path is None:
+        if processed_dir is None:
+            processed_dir = os.getenv("PROCESSED_DIR", "./data/processed")
+        table_path = os.path.join(processed_dir, "tables", "labs.parquet")
+
+    if not os.path.exists(table_path):
+        return ""
+
+    try:
+        df = pd.read_parquet(table_path)
+    except Exception:
+        return ""
+
+    if df is None or df.empty or "date" not in df.columns:
+        return ""
+
+    dff = df[df["date"].notna()].copy()
+    if dff.empty:
+        return ""
+
+    # Determine latest date (ISO sorts lexicographically)
+    latest_date = sorted(dff["date"].astype(str).unique())[-1]
+    panel = dff[dff["date"] == latest_date].copy()
+    if panel.empty:
+        return ""
+
+    # Prioritize out-of-range rows first
+    def _to_float(x):
+        try:
+            import math
+            if x is None:
+                return None
+            if isinstance(x, float) and (math.isnan(x) or math.isinf(x)):
+                return None
+            return float(x)
+        except Exception:
+            return None
+
+    def _oor(row) -> int:
+        v = _to_float(row.get("value"))
+        rl = _to_float(row.get("ref_low"))
+        rh = _to_float(row.get("ref_high"))
+        if v is None:
+            return 0
+        if rl is not None and v < rl:
+            return 1
+        if rh is not None and v > rh:
+            return 1
+        return 0
+
+    panel = panel.copy()
+    panel["_oor"] = panel.apply(_oor, axis=1)
+    panel = panel.sort_values(["_oor", "analyte"], ascending=[False, True])
+    if max_rows is not None and max_rows > 0:
+        panel = panel.head(max_rows)
+
+    lines: List[str] = ["[structured_labs_panel]", f"- Date: {latest_date}"]
+    for _, r in panel.fillna("").iterrows():
+        name = _safe_str(r.get("analyte"))
+        val = _safe_str(r.get("value"))
+        unit = _safe_str(r.get("unit"))
+        rl = _safe_str(r.get("ref_low"))
+        rh = _safe_str(r.get("ref_high"))
+        flag = _safe_str(r.get("flag"))
+        ref = f"ref {rl}-{rh}" if (rl or rh) else ""
+        pieces = [name + ":", val, unit, f"({ref})" if ref else "", f"[{flag}]" if flag else ""]
+        line = " ".join([p for p in pieces if p]).strip()
+        if line:
+            lines.append("  - " + line)
 
     return "\n".join(lines)

@@ -12,7 +12,7 @@ from langchain_ollama import ChatOllama
 # from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from tools.structured_context import load_meds_timeline
+from tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
 
 VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/processed/vectorstore")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
@@ -112,6 +112,7 @@ def _retrieve(query: str) -> List[Document]:
         (make_retriever(None), query),
         (make_retriever({"source_type": "labs"}), query + " focus on laboratory results and reference ranges"),
         (make_retriever({"source_type": "meds"}), query + " focus on medication dosing, dose changes, start/stop dates"),
+        (make_retriever({"source_type": "whoop"}), query + " focus on WHOOP metrics: sleep, recovery, workouts, HRV, RHR, respiratory rate, strain"),
     ]
 
     collected: List[Document] = []
@@ -143,7 +144,7 @@ def _retrieve(query: str) -> List[Document]:
     return collected
 
 
-def _build_context(docs: List[Document]) -> str:
+def _build_context(question: str, docs: List[Document]) -> str:
     def fmt(d: Document) -> str:
         m = d.metadata or {}
         src = m.get("source", "unknown")
@@ -154,10 +155,101 @@ def _build_context(docs: List[Document]) -> str:
 
     structured_blocks: List[str] = []
     ql = question.lower()
+
+    # Medication dosing timeline when question touches meds or labs
     if any(k in ql for k in ["med", "dose", "dosing", "medication", "lab", "labs"]):
+        print('Loading meds timeline')
         meds_timeline = load_meds_timeline()
         if meds_timeline:
             structured_blocks.append(meds_timeline)
+
+    # Latest labs panel snapshot when question touches labs broadly
+    if any(k in ql for k in ["lab", "labs", "panel", "analyte"]):
+        print('Loading labs panel')
+        labs_panel = load_labs_panel()
+        if labs_panel:
+            structured_blocks.append(labs_panel)
+
+    # WHOOP recent snapshot when question touches WHOOP or sleep/recovery/workouts
+    if any(k in ql for k in [
+        "whoop", "sleep", "recovery", "workout", "strain", "hrv", "rhr", "resting heart rate", "respiratory rate", "skin temp"
+    ]):
+        print('Loading WHOOP recent snapshot')
+        whoop_block = load_whoop_recent()
+        if whoop_block:
+            structured_blocks.append(whoop_block)
+
+    # Analyte-specific summaries if the question mentions them
+    try:
+        from tools import labs_tool as LT  # local import to avoid heavy deps at module import time
+        names = LT.list_analytes()
+        print('Checking for analyte-specific queries')
+        if names:
+            ql_compact = ql
+            # direct name substring match
+            matches = [n for n in names if n.lower() in ql_compact]
+            # if none, try token prefix match for tokens >=3 chars
+            if not matches:
+                toks = [t.strip(",.;:!?()[]{}") for t in ql_compact.split()]
+                cands = set()
+                for t in toks:
+                    if len(t) >= 3:
+                        for n in names:
+                            if n.lower().startswith(t):
+                                cands.add(n)
+                matches = list(cands)
+            # limit to top few to keep prompt lean
+            matches = matches[:3]
+            print('Matched analytes:', matches)
+
+            if matches:
+                # Summaries
+                lines = ["[structured_labs_summaries]"]
+                for n in matches:
+                    s = LT.summary(n)
+                    if not s:
+                        continue
+                    dpct = s.get("pct_change_from_prev")
+                    dpct_str = f"{dpct:.1f}%" if isinstance(dpct, (int, float)) else ""
+                    delta = s.get("delta_from_prev")
+                    unit = s.get("unit") or ""
+                    ref = (f"{s.get('ref_low')}-{s.get('ref_high')}"
+                           if (s.get('ref_low') is not None or s.get('ref_high') is not None) else "")
+                    pieces = [
+                        f"{s['analyte']}:",
+                        f"{s.get('last_value')} {unit}".strip(),
+                        f"on {s.get('last_date')}" if s.get('last_date') else "",
+                        f"(ref {ref})" if ref else "",
+                        f"[flag {s.get('flag')}]" if s.get('flag') else "",
+                        (f"Δprev {delta}" + (f" ({dpct_str})" if dpct_str else "")) if (delta is not None) else "",
+                        f"[{s.get('out_of_range')}]" if s.get('out_of_range') else "",
+                    ]
+                    line = " ".join([p for p in pieces if p]).strip()
+                    if line:
+                        lines.append("- " + line)
+                if len(lines) > 1:
+                    structured_blocks.append("\n".join(lines))
+
+                # Recent history (chronological) for the same matches
+                hist_lines = ["[structured_labs_history]"]
+                for n in matches:
+                    h = LT.history(n, limit=5, ascending=False)
+                    if not h:
+                        continue
+                    h = list(reversed(h))
+                    seq = ", ".join([
+                        f"{x.get('date')}: {x.get('value')} {x.get('unit') or ''}".strip()
+                        for x in h
+                    ])
+                    if seq:
+                        hist_lines.append(f"- {n}: {seq}")
+                if len(hist_lines) > 1:
+                    structured_blocks.append("\n".join(hist_lines))
+
+    except Exception:
+        # If any issue occurs, silently skip structured labs additions to avoid user disruption
+        print('Failed to add analyte-specific summaries to context')
+        pass
 
     context_parts: List[str] = []
     if structured_blocks:
@@ -171,7 +263,7 @@ def _build_context(docs: List[Document]) -> str:
 def answer_question(question: str, history: Optional[List[dict]] = None) -> Tuple[str, List[str]]:
     docs = _retrieve(question)
 
-    context = _build_context(docs)
+    context = _build_context(question, docs)
 
     sources = []
     for d in docs:
