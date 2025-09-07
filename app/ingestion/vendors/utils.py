@@ -7,8 +7,10 @@ try:
     import pytesseract  # type: ignore
     from PIL import Image  # type: ignore
     HAVE_OCR = True
+    print("OCR enabled")
 except Exception:
     HAVE_OCR = False
+    print("OCR disabled")
 
 
 # Common date patterns
