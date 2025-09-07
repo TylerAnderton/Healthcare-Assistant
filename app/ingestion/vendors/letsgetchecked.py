@@ -1,12 +1,8 @@
 import re
 from typing import List, Dict, Optional, Tuple
 import fitz  # PyMuPDF
-try:
-    import pytesseract  # optional OCR
-    from PIL import Image
-    HAVE_OCR = True
-except Exception:
-    HAVE_OCR = False
+
+HAVE_OCR = False # TODO: remove all OCR references
 
 DATE_PATTERNS = [
     re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d{2})\b"),  # MM/DD/YYYY
