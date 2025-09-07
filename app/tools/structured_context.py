@@ -8,7 +8,8 @@ import os
 from typing import List, Optional
 import pandas as pd
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, UTC, timedelta
+from tools.whoop_tool import recent as whoop_recent
 
 
 def _safe_str(x) -> str:
@@ -209,3 +210,132 @@ def load_labs_panel(
             lines.append("  - " + line)
 
     return "\n".join(lines)
+
+
+def _fmt_minutes_to_hm(min):
+    try:
+        if min is None:
+            return ""
+        s = int(float(min))
+        if s < 0:
+            return ""
+        h, rem = divmod(s, 60)
+        if h > 0:
+            return f"{h}h {rem}m"
+        return f"{rem}m"
+    except Exception:
+        return ""
+
+
+def load_whoop_recent(
+    days: int = 7,
+) -> str:
+    """Build a compact WHOOP snapshot block for recent days using whoop_tool.recent().
+
+    This delegates all column mapping and date parsing to tools/whoop_tool.py
+    to avoid code duplication. processed_dir is accepted for API compatibility,
+    but whoop_tool handles path resolution internally.
+    """
+    try:
+        data = whoop_recent(days=days)
+    except Exception:
+        return ""
+
+    lines: List[str] = []
+
+    # Sleeps
+    sleeps = data.get("sleeps") or []
+    if sleeps:
+        lines.append("[whoop_recent_sleeps]")
+        for r in sorted(sleeps, key=lambda x: str(x.get("date"))):
+            date = str(r.get("date"))
+            score = r.get("sleep_score")
+            sleep_start_time = r.get("sleep_start_time")
+            inbed_dur_min = _fmt_minutes_to_hm(r.get("inbed_duration_min"))
+            asleep_dur_min = _fmt_minutes_to_hm(r.get("asleep_duration_min"))
+            light_sleep_dur_min = _fmt_minutes_to_hm(r.get("light_sleep_duration_min"))
+            deep_sleep_dur_min = _fmt_minutes_to_hm(r.get("deep_sleep_duration_min"))
+            rem_sleep_dur_min = _fmt_minutes_to_hm(r.get("rem_sleep_duration_min"))
+            awake_dur_min = _fmt_minutes_to_hm(r.get("awake_duration_min"))
+            efficiency = r.get("efficiency_pct")
+            consistency = r.get("consistency_pct")
+            nap = r.get("nap")
+
+            parts = [
+                f"- {date}:",
+                f"sleep score {score}" if score not in (None, "") else "",
+                f"sleep start {sleep_start_time}" if sleep_start_time not in (None, "") else "",
+                f"inbed duration {inbed_dur_min}" if inbed_dur_min else "",
+                f"asleep duration {asleep_dur_min}" if asleep_dur_min else "",
+                f"light sleep duration {light_sleep_dur_min}" if light_sleep_dur_min else "",
+                f"deep sleep duration {deep_sleep_dur_min}" if deep_sleep_dur_min else "",
+                f"rem sleep duration {rem_sleep_dur_min}" if rem_sleep_dur_min else "",
+                f"awake duration {awake_dur_min}" if awake_dur_min else "",
+                f"efficiency {efficiency}%" if efficiency not in (None, "") else "",
+                f"consistency {consistency}%" if consistency not in (None, "") else "",
+                f"nap {nap}" if nap not in (None, "") else "",
+            ]
+            s = " ".join([p for p in parts if p]).strip()
+            if s:
+                lines.append(s)
+
+    # Recovery
+    recovery = data.get("recovery") or []
+    if recovery:
+        lines.append("[whoop_recent_recovery]")
+        for r in sorted(recovery, key=lambda x: str(x.get("date"))):
+            date = str(r.get("date"))
+            rec = r.get("recovery_score")
+            rhr = r.get("rhr_bpm")
+            hrv = r.get("hrv_ms")
+
+            parts = [
+                f"- {date}:",
+                f"recovery {rec}" if rec not in (None, "") else "",
+                f"RHR {rhr} bpm" if rhr not in (None, "") else "",
+                f"HRV {hrv} ms" if hrv not in (None, "") else "",
+            ]
+            s = " ".join([p for p in parts if p]).strip()
+            if s:
+                lines.append(s)
+
+    # Workouts
+    workouts = data.get("workouts") or []
+    if workouts:
+        lines.append("[whoop_recent_workouts]")
+        for r in sorted(workouts, key=lambda x: str(x.get("date"))):
+            date = str(r.get("date"))
+            sport = r.get("sport")
+            dur_str = _fmt_minutes_to_hm(r.get("duration_min"))
+            strain = r.get("strain")
+            avg_hr = r.get("avg_hr_bpm")
+            max_hr = r.get("max_hr_bpm")
+            cal = r.get("calories")
+            hr_zone_1 = r.get("hr_zone_1")
+            hr_zone_2 = r.get("hr_zone_2")
+            hr_zone_3 = r.get("hr_zone_3")
+            hr_zone_4 = r.get("hr_zone_4")
+            hr_zone_5 = r.get("hr_zone_5")
+
+            parts = [
+                f"- {date}:",
+                f"{sport}" if sport not in (None, "") else "workout",
+                f"duration {dur_str}" if dur_str else "",
+                f"strain {strain}" if strain not in (None, "") else "",
+                f"avg HR {avg_hr} bpm" if avg_hr not in (None, "") else "",
+                f"max HR {max_hr} bpm" if max_hr not in (None, "") else "",
+                f"{cal} kcal" if cal not in (None, "") else "",
+                f"HR Zone 1 {hr_zone_1}%" if hr_zone_1 not in (None, "") else "",
+                f"HR Zone 2 {hr_zone_2}%" if hr_zone_2 not in (None, "") else "",
+                f"HR Zone 3 {hr_zone_3}%" if hr_zone_3 not in (None, "") else "",
+                f"HR Zone 4 {hr_zone_4}%" if hr_zone_4 not in (None, "") else "",
+                f"HR Zone 5 {hr_zone_5}%" if hr_zone_5 not in (None, "") else "",
+            ]
+            s = " ".join([p for p in parts if p]).strip()
+            if s:
+                lines.append(s)
+
+    if not lines:
+        return ""
+    header = f"[structured_whoop_recent] (last {days} days)"
+    return "\n".join([header] + lines)

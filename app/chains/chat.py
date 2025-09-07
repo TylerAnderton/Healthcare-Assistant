@@ -13,6 +13,7 @@ from langchain_ollama import ChatOllama
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
+from chains.prompts import *
 
 VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/processed/vectorstore")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
@@ -25,23 +26,6 @@ try:
 except Exception:
     MAX_CONTEXT_DOCS = None
     MAX_DOCS_PER_RETRIEVER = 12
-
-_system = (
-    "You are a health data analysis assistant.\n"
-    "- Provide educational, data-driven analysis using the provided documents and structured timelines.\n"
-    "- Do not refuse; if the question is sensitive, respond with neutral, general information without directives or prescriptions.\n"
-    "- If data is insufficient, state what is missing and suggest how to obtain or compute it.\n"
-    "- Prefer citing exact numbers, dates, ranges, and dose changes from the sources.\n"
-    "- When analyzing over time, enumerate multiple relevant dates and highlight dose changes vs lab changes; avoid relying on a single data point.\n"
-)
-
-_prompt = ChatPromptTemplate.from_messages([
-    ("system", _system + "\nContext from documents (if any):\n{context}"),
-    # Lightweight few-shot to discourage refusal and set style
-    ("human", "Example: How did my dose changes relate to later lab results?"),
-    ("assistant", "Example analysis (educational):\n- Identify dates of dose start/changes and corresponding lab dates.\n- Summarize trends (e.g., dose increase preceded level increase/decrease by N days).\n- Cite sources or timeline items with dates; avoid directives or personalized medical advice."),
-    ("human", "Question: {question}")
-])
 
 
 def _convert_history_to_messages(history: List[dict], max_messages: int = 12) -> List[tuple]:
@@ -278,12 +262,15 @@ def answer_question(question: str, history: Optional[List[dict]] = None) -> Tupl
     # Build a dynamic prompt that includes prior turns
     hist_msgs = _convert_history_to_messages(history or [])
     prompt_msgs: List[tuple] = [
-        ("system", _system + "\nContext from documents (if any):\n" + context)
+        ("system", SYSTEM_BASE + "\nContext from documents (if any):\n" + context)
     ]
 
     # Include the few-shot after system but before real history
-    prompt_msgs.append(("human", "Example: How did my dose changes relate to later lab results?"))
-    prompt_msgs.append(("assistant", "Example analysis (educational):\n- Identify dates of dose start/changes and corresponding lab dates.\n- Summarize trends (e.g., dose increase preceded level increase/decrease by N days).\n- Cite sources or timeline items with dates; avoid directives or personalized medical advice."))
+    # prompt_msgs.append(("human", "Example: How did my dose changes relate to later lab results?"))
+    # prompt_msgs.append(("assistant", "Example analysis (educational):\n- Identify dates of dose start/changes and corresponding lab dates.\n- Summarize trends (e.g., dose increase preceded level increase/decrease by N days).\n- Cite sources or timeline items with dates; avoid directives or personalized medical advice."))
+    for example in few_shot_examples:
+        prompt_msgs.append(("human", example["human"]))
+        prompt_msgs.append(("assistant", example["assistant"]))
 
     # Append prior conversation turns
     prompt_msgs.extend(hist_msgs)
