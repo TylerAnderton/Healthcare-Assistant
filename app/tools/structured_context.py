@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, UTC, timedelta
 import logging
 
-from tools.whoop_tool import recent as whoop_recent
+from .whoop_tool import recent as whoop_recent
 
 logger = logging.getLogger(__name__)
 

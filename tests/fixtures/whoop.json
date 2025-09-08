@@ -1,0 +1,8 @@
+{
+  "recovery_cases": [
+    {"date": "2025-08-25", "recovery_score": 57.0, "strain": 16.4, "rhr_bpm": 52.0, "hrv_ms": 70.0},
+    {"date": "2025-08-26", "recovery_score": 65.0, "strain": 12.6, "rhr_bpm": 50.0, "hrv_ms": 70.0},
+    {"date": "2025-08-27", "recovery_score": 72.0, "strain": 15.5, "rhr_bpm": 52.0, "hrv_ms": 72.0},
+    {"date": "2025-08-28", "recovery_score": 37.0, "strain": 15.6, "rhr_bpm": 54.0, "hrv_ms": 61.0}
+  ]
+}

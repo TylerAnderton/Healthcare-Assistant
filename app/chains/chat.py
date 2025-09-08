@@ -13,8 +13,8 @@ from langchain_ollama import ChatOllama
 # from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
-from chains.prompts import *
+from app.tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
+from .prompts import *
 
 VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/processed/vectorstore")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")

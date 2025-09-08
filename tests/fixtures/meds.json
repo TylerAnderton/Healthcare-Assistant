@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {
+      "med": "Testosterone Cypionate",
+      "events": [
+        {"date": "2023-11-01", "kind": "start", "dose": "26", "dose_unit": "mg", "freq": "1", "freq_unit": "daily"},
+        {"date": "2023-12-01", "kind": "start", "dose": "28", "dose_unit": "mg", "freq": "1", "freq_unit": "daily"}
+      ]
+    },
+    {
+      "med": "HCG",
+      "events": [
+        {"date": "2024-05-01", "kind": "start", "dose": "200", "dose_unit": "IU", "freq": "3", "freq_unit": "weekly"},
+        {"date": "2025-07-31", "kind": "stop", "dose": "300", "dose_unit": "IU", "freq": "1", "freq_unit": "daily"}
+      ]
+    },
+    {
+      "med": "Trazodone",
+      "events": [
+        {"date": "2025-02-01", "kind": "start", "dose": "50", "dose_unit": "mg", "freq": "1", "freq_unit": "daily"},
+        {"date": "2025-03-01", "kind": "start", "dose": "75", "dose_unit": "mg", "freq": "1", "freq_unit": "daily"}
+      ]
+    }
+  ]
+}

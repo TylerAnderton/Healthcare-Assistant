@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "category": "labs",
+      "prompt": "What was my ALT (SGPT) value on 2025-03-27? Please include the unit.",
+      "expect_contains": ["2025-03-27", "ALT (SGPT)", "IU/L", "38"],
+      "notes": "ALT (SGPT) on 2025-03-27 should be 38.0 IU/L per labs.parquet"
+    },
+    {
+      "category": "labs",
+      "prompt": "Compare my % Free Testosterone values across 2024-04-30, 2024-08-21, and 2024-10-02.",
+      "expect_contains": ["% Free Testosterone", "2024-04-30", "2024-08-21", "2024-10-02", "%"],
+      "notes": "Values: 4.89%, 4.62%, 3.03%"
+    },
+    {
+      "category": "meds",
+      "prompt": "When did I stop HCG and what dose/frequency was I on right before stopping?",
+      "expect_contains": ["HCG", "2025-07-31", "300", "IU", "daily"],
+      "notes": "Stop date 2025-07-31; prior state was 300 IU daily"
+    },
+    {
+      "category": "meds",
+      "prompt": "What dose of Testosterone Cypionate was I taking on 2024-01-05?",
+      "expect_contains": ["Testosterone Cypionate", "2024-01", "28", "mg", "daily"],
+      "notes": "Dose at that time was 28 mg daily"
+    },
+    {
+      "category": "whoop",
+      "prompt": "What was my WHOOP recovery and strain on 2025-08-27?",
+      "expect_contains": ["2025-08-27", "recovery", "72", "strain", "15.5"],
+      "notes": "Recovery 72%, strain 15.5"
+    }
+  ]
+}
