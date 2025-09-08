@@ -3,6 +3,7 @@ import os
 import glob
 import pandas as pd
 from typing import List
+import logging
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -13,6 +14,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
+logger = logging.getLogger(__name__)
 
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
@@ -21,7 +23,7 @@ def ensure_dir(path: str):
 def load_corpus(corpus_dir: str) -> List[Document]:
     docs: List[Document] = []
     for fp in glob.glob(os.path.join(corpus_dir, "*.parquet")):
-        print(f"Loading corpus from {fp}")
+        logger.info(f"Loading corpus from {fp}")
         df = pd.read_parquet(fp)
         for _, row in df.iterrows():
             text = str(row.get("text", ""))
@@ -36,7 +38,7 @@ def build_index(corpus_dir: str, store_dir: str, embedding_model: str):
     ensure_dir(store_dir)
     docs = load_corpus(corpus_dir)
     if not docs:
-        print("No corpus documents found; aborting index build.")
+        logger.warning("No corpus documents found; aborting index build.")
         return
     # Split into smaller chunks for better recall
     splitter = RecursiveCharacterTextSplitter(
@@ -47,7 +49,7 @@ def build_index(corpus_dir: str, store_dir: str, embedding_model: str):
     docs = splitter.split_documents(docs)
     embeddings = HuggingFaceEmbeddings(model_name=embedding_model)
     Chroma.from_documents(documents=docs, embedding=embeddings, persist_directory=store_dir)
-    print(f"Built index with {len(docs)} chunks at {store_dir}")
+    logger.info(f"Built index with {len(docs)} chunks at {store_dir}")
 
 
 if __name__ == "__main__":

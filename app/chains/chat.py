@@ -1,5 +1,6 @@
 import os
 from typing import List, Tuple, Set, Optional
+import logging
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -27,6 +28,7 @@ except Exception:
     MAX_CONTEXT_DOCS = None
     MAX_DOCS_PER_RETRIEVER = 12
 
+logger = logging.getLogger(__name__)
 
 def _convert_history_to_messages(history: List[dict], max_messages: int = 12) -> List[tuple]:
     """Map Streamlit-style chat history to ChatPromptTemplate messages.
@@ -142,14 +144,14 @@ def _build_context(question: str, docs: List[Document]) -> str:
 
     # Medication dosing timeline when question touches meds or labs
     if any(k in ql for k in ["med", "dose", "dosing", "medication", "lab", "labs"]):
-        print('Loading meds timeline')
+        logger.info('Loading meds timeline')
         meds_timeline = load_meds_timeline()
         if meds_timeline:
             structured_blocks.append(meds_timeline)
 
     # Latest labs panel snapshot when question touches labs broadly
     if any(k in ql for k in ["lab", "labs", "panel", "analyte"]):
-        print('Loading labs panel')
+        logger.info('Loading labs panel')
         labs_panel = load_labs_panel()
         if labs_panel:
             structured_blocks.append(labs_panel)
@@ -158,7 +160,7 @@ def _build_context(question: str, docs: List[Document]) -> str:
     if any(k in ql for k in [
         "whoop", "sleep", "recovery", "workout", "strain", "hrv", "rhr", "resting heart rate", "respiratory rate", "skin temp"
     ]):
-        print('Loading WHOOP recent snapshot')
+        logger.info('Loading WHOOP recent snapshot')
         whoop_block = load_whoop_recent()
         if whoop_block:
             structured_blocks.append(whoop_block)
@@ -167,7 +169,7 @@ def _build_context(question: str, docs: List[Document]) -> str:
     try:
         from tools import labs_tool as LT  # local import to avoid heavy deps at module import time
         names = LT.list_analytes()
-        print('Checking for analyte-specific queries')
+        logger.info('Checking for analyte-specific queries')
         if names:
             ql_compact = ql
             # direct name substring match
@@ -184,7 +186,7 @@ def _build_context(question: str, docs: List[Document]) -> str:
                 matches = list(cands)
             # limit to top few to keep prompt lean
             matches = matches[:3]
-            print('Matched analytes:', matches)
+            logger.info('Matched analytes:', matches)
 
             if matches:
                 # Summaries
@@ -232,7 +234,7 @@ def _build_context(question: str, docs: List[Document]) -> str:
 
     except Exception:
         # If any issue occurs, silently skip structured labs additions to avoid user disruption
-        print('Failed to add analyte-specific summaries to context')
+        logger.error('Failed to add analyte-specific summaries to context')
         pass
 
     context_parts: List[str] = []

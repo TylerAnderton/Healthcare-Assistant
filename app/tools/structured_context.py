@@ -9,7 +9,11 @@ from typing import List, Optional
 import pandas as pd
 from collections import defaultdict
 from datetime import datetime, UTC, timedelta
+import logging
+
 from tools.whoop_tool import recent as whoop_recent
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_str(x) -> str:
@@ -131,7 +135,7 @@ def load_meds_timeline(
 
 
 def load_labs_panel(
-    max_rows: int = 25,
+    max_rows: int = 40,
     processed_dir: Optional[str] = None,
     table_path: Optional[str] = None,
 ) -> str:
@@ -161,6 +165,7 @@ def load_labs_panel(
 
     # Determine latest date (ISO sorts lexicographically)
     latest_date = sorted(dff["date"].astype(str).unique())[-1]
+    logger.info(f"Latest lab panel date: {latest_date}")
     panel = dff[dff["date"] == latest_date].copy()
     if panel.empty:
         return ""

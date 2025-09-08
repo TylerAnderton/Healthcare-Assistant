@@ -3,12 +3,14 @@ import os
 import glob
 import pandas as pd
 from datetime import datetime, UTC
+import logging
 
 from app.tools.whoop_tool import pick_column, parse_date_any
 
 from dotenv import load_dotenv
 load_dotenv()
 
+logger = logging.getLogger(__name__)
 
 def ensure_dirs(base_out: str):
     os.makedirs(os.path.join(base_out, "tables"), exist_ok=True)
@@ -37,7 +39,7 @@ def main(src: str, out: str):
                 try:
                     df = pd.read_csv(fp)
                 except Exception as e:
-                    print(f"Failed to read {fp}: {e}")
+                    logger.error(f"Failed to read {fp}: {e}")
                     continue
                 # Save tables as-is for now
                 out_fp = os.path.join(out, "tables", f"whoop_{os.path.splitext(name)[0]}.parquet")
@@ -56,7 +58,7 @@ def main(src: str, out: str):
                 nlow = name.lower()
                 try:
                     if "sleep" in nlow:
-                        print(f"Processing sleeps from {fp}")
+                        logger.info(f"Processing sleeps from {fp}")
                         dff = df.copy()
                         # unify date
                         if "date" not in dff.columns:
@@ -84,7 +86,7 @@ def main(src: str, out: str):
                                 })
 
                     if "physiological_cycles" in nlow or "physiological" in nlow or "recovery" in nlow:
-                        print(f"Processing physiological cycles from {fp}")
+                        logger.info(f"Processing physiological cycles from {fp}")
                         dff = df.copy()
                         if "date" not in dff.columns:
                             dff["date"] = dff.apply(lambda r: parse_date_any(r, [
@@ -117,7 +119,7 @@ def main(src: str, out: str):
                                 })
 
                     if "workouts" in nlow:
-                        print(f"Processing workouts from {fp}")
+                        logger.info(f"Processing workouts from {fp}")
                         dff = df.copy()
                         # unify date
                         if "date" not in dff.columns:
@@ -153,12 +155,12 @@ def main(src: str, out: str):
                     pass
 
     if not found_any:
-        print("No WHOOP CSVs found.")
+        logger.warning("No WHOOP CSVs found.")
 
     if corpus_rows:
         cdf = pd.DataFrame(corpus_rows)
         cdf.to_parquet(os.path.join(out, "corpus", "whoop_corpus.parquet"))
-        print(f"Wrote WHOOP corpus: {len(cdf)} rows")
+        logger.info(f"Wrote WHOOP corpus: {len(cdf)} rows")
 
 
 if __name__ == "__main__":

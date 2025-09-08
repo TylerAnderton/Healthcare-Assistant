@@ -119,8 +119,8 @@ def _parse_value_and_flag(text: str) -> Tuple[Optional[float], Optional[str]]:
 
 def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     date = extract_report_date(doc, filepath)
-    print(f"Extracting rows from {filepath}")
-    print(f"Date: {date}")
+    # print(f"Extracting rows from {filepath}")
+    # print(f"Date: {date}")
     out: List[Dict] = []
 
     def _page_lines_text(p: fitz.Page) -> List[str]:

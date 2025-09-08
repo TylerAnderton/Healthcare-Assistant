@@ -3,10 +3,12 @@ import os
 import glob
 import pandas as pd
 from datetime import datetime, UTC
+import logging
 
 from dotenv import load_dotenv
 load_dotenv()
 
+logger = logging.getLogger(__name__)
 
 def ensure_dirs(base_out: str):
     os.makedirs(os.path.join(base_out, "tables"), exist_ok=True)
@@ -32,7 +34,7 @@ def main(src: str, out: str):
         try:
             df = load_any(fp)
         except Exception as e:
-            print(f"Failed to read {fp}: {e}")
+            logger.error(f"Failed to read {fp}: {e}")
             continue
         df["__source_file"] = os.path.relpath(fp)
         tables.append(df)
@@ -60,14 +62,14 @@ def main(src: str, out: str):
     if tables:
         all_df = pd.concat(tables, ignore_index=True)
         all_df.to_parquet(os.path.join(out, "tables", "meds.parquet"))
-        print(f"Wrote meds table: {len(all_df)} rows")
+        logger.info(f"Wrote meds table: {len(all_df)} rows")
     else:
-        print("No medications files found.")
+        logger.warning("No medications files found.")
 
     if corpus_rows:
         cdf = pd.DataFrame(corpus_rows)
         cdf.to_parquet(os.path.join(out, "corpus", "meds_corpus.parquet"))
-        print(f"Wrote meds corpus: {len(cdf)} rows")
+        logger.info(f"Wrote meds corpus: {len(cdf)} rows")
 
 
 if __name__ == "__main__":
