@@ -131,6 +131,7 @@ def _retrieve(query: str) -> List[Document]:
 
 
 def _build_context(question: str, docs: List[Document]) -> str:
+    logger.info('Building context from %d docs', len(docs))
     def fmt(d: Document) -> str:
         m = d.metadata or {}
         src = m.get("source", "unknown")
@@ -186,7 +187,7 @@ def _build_context(question: str, docs: List[Document]) -> str:
                 matches = list(cands)
             # limit to top few to keep prompt lean
             matches = matches[:3]
-            logger.info('Matched analytes:', matches)
+            logger.info('Matched analytes: %s', matches)
 
             if matches:
                 # Summaries
@@ -247,7 +248,9 @@ def _build_context(question: str, docs: List[Document]) -> str:
 
 
 def answer_question(question: str, history: Optional[List[dict]] = None) -> Tuple[str, List[str]]:
+    logger.info('Received question: %s', question)
     docs = _retrieve(question)
+    logger.info('Retrieved %d docs', len(docs))
 
     context = _build_context(question, docs)
 

@@ -28,6 +28,7 @@ A local-first chatbot to understand your healthcare data (labs PDFs, medications
    - `python -m app.indexing.build_index`
 6. Run UI
    - `streamlit run app/app.py`
+   - Use the `--logger.level=info` flag to see more detailed logging
 
 ## Notes
 - This app does not provide medical advice. Use for education and discussion with clinicians.

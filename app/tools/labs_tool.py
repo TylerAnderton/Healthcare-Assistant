@@ -2,20 +2,25 @@ from typing import Optional, List, Dict
 import os
 import math
 import pandas as pd
+import logging
 
 TABLE_PATH = os.path.join(os.getenv("PROCESSED_DIR", "./data/processed"), "tables", "labs.parquet")
 
+logger = logging.getLogger(__name__)
 
 def _load_df(table_path: Optional[str] = None) -> Optional[pd.DataFrame]:
     tp = table_path or TABLE_PATH
     if not os.path.exists(tp):
+        logger.warning(f'Labs table not found at {tp}')
         return None
     try:
         df = pd.read_parquet(tp)
         if df is None or df.empty:
+            logger.warning(f'Labs table is empty at {tp}')
             return None
         return df
     except Exception:
+        logger.error(f'Failed to load labs table at {tp}')
         return None
 
 
@@ -33,6 +38,7 @@ def _safe_float(x) -> Optional[float]:
 def list_analytes(prefix: Optional[str] = None, table_path: Optional[str] = None) -> List[str]:
     df = _load_df(table_path)
     if df is None or "analyte" not in df.columns:
+        logger.warning(f'No valid labs table found at {table_path}')
         return []
     names = [str(x) for x in df["analyte"].dropna().unique()]
     names.sort(key=lambda s: s.lower())
@@ -45,9 +51,11 @@ def list_analytes(prefix: Optional[str] = None, table_path: Optional[str] = None
 def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
     df = _load_df(table_path)
     if df is None or "analyte" not in df.columns or "value" not in df.columns:
+        logger.warning(f'No valid labs table found at {table_path}')
         return None
     dff = df[df["analyte"].str.lower() == analyte.lower()].copy()
     if dff.empty:
+        logger.warning(f'Labs table at {table_path} is empty')
         return None
     dff = dff.sort_values("date", ascending=False)
     r = dff.iloc[0]
@@ -68,9 +76,11 @@ def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dic
 def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, table_path: Optional[str] = None) -> List[Dict]:
     df = _load_df(table_path)
     if df is None or "analyte" not in df.columns:
+        logger.warning(f'No valid labs table found at {table_path}')
         return []
     dff = df[df["analyte"].str.lower() == analyte.lower()].copy()
     if dff.empty:
+        logger.warning(f'Labs table at {table_path} is empty')
         return []
     dff = dff.sort_values("date", ascending=ascending)
     if limit is not None and limit > 0:
@@ -80,17 +90,25 @@ def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, t
 
 
 def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
+    logger.info(f'Building summary for {analyte}')
     df = _load_df(table_path)
+
     if df is None or "analyte" not in df.columns or "value" not in df.columns:
+        logger.warning(f'No valid labs table found at {table_path}')
         return None
     dff = df[df["analyte"].str.lower() == analyte.lower()].copy()
     if dff.empty:
+        logger.warning(f'No valid data found for {analyte}')
         return None
     dff = dff.sort_values("date")
     vals = pd.to_numeric(dff["value"], errors="coerce")
     vals = vals.dropna()
     if vals.empty:
+        logger.warning(f'No valid data found for {analyte}')
         return None
+    
+    logger.info(f'{len(vals)} rows found for {analyte}')
+
     last = dff.iloc[-1]
     last_val = _safe_float(last.get("value"))
     prev_val = _safe_float(dff.iloc[-2].get("value")) if len(dff) >= 2 else None
@@ -99,11 +117,13 @@ def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
     rl = _safe_float(last.get("ref_low"))
     rh = _safe_float(last.get("ref_high"))
     out_of_range = None
+
     if last_val is not None and (rl is not None or rh is not None):
         if rl is not None and last_val < rl:
             out_of_range = "LOW"
         if rh is not None and last_val > rh:
             out_of_range = "HIGH"
+
     return {
         "analyte": str(last.get("analyte", analyte)),
         "count": int(len(dff)),
