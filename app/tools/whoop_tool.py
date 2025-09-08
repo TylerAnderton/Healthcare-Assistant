@@ -133,7 +133,7 @@ def sleeps(
     for _, r in dff.iterrows():
         out.append({
             "date": str(r.get("date")),
-            "sleep_score": pick_column(r, ["sleep_performance", "sleep_score", "score", "Sleep score %"]),
+            "sleep_score": pick_column(r, ["sleep_performance", "sleep_score", "score", "Sleep performance %"]),
             # TODO: Apply time zone conversion with "Cycle timezone" column
             "sleep_start_time": pick_column(r, ["sleep_start", "start_time", "Sleep onset"]),
             "inbed_duration_min": pick_column(r, ["In bed duration (min)"]),
@@ -177,6 +177,7 @@ def recovery(
     for _, r in dff.iterrows():
         out.append({
             "date": str(r.get("date")),
+            "strain": pick_column(r, ["strain", "Day Strain"]),
             "recovery_score": pick_column(r, ["recovery_score", "recovery", "score", "Recovery score %"]),
             "rhr_bpm": pick_column(r, ["resting_heart_rate", "rhr", "Resting heart rate (bpm)"]),
             "hrv_ms": pick_column(r, ["hrv", "hrv_rmssd_milli", "rmssd", "Heart rate variability (ms)"]),
@@ -193,7 +194,7 @@ def workouts(
 ) -> List[Dict]:
     """Return basic workout metrics per date.
 
-    Fields: date, sport, duration_sec, strain, avg_hr_bpm, calories
+    Fields: date, activity, duration_min, strain, avg_hr_bpm, calories
     """
     tp = table_path or WORKOUTS_PATH
     df = _load_df(tp)
@@ -211,7 +212,7 @@ def workouts(
     for _, r in dff.iterrows():
         out.append({
             "date": str(r.get("date")),
-            "sport": pick_column(r, ["sport", "activity", "type", "Activity name"]),
+            "activity": pick_column(r, ["sport", "activity", "type", "Activity name"]),
             "duration_min": pick_column(r, ["duration", "workout_duration", "Duration (minutes)"]),
             "strain": pick_column(r, ["strain", "Activity Strain"]),
             "avg_hr_bpm": pick_column(r, ["average_heart_rate", "avg_hr", "Average HR (bpm)"]),

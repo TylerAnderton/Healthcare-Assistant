@@ -285,12 +285,14 @@ def load_whoop_recent(
         lines.append("[whoop_recent_recovery]")
         for r in sorted(recovery, key=lambda x: str(x.get("date"))):
             date = str(r.get("date"))
+            strain = r.get("strain")
             rec = r.get("recovery_score")
             rhr = r.get("rhr_bpm")
             hrv = r.get("hrv_ms")
 
             parts = [
                 f"- {date}:",
+                f"strain {strain}" if strain not in (None, "") else "",
                 f"recovery {rec}" if rec not in (None, "") else "",
                 f"RHR {rhr} bpm" if rhr not in (None, "") else "",
                 f"HRV {hrv} ms" if hrv not in (None, "") else "",
@@ -305,7 +307,7 @@ def load_whoop_recent(
         lines.append("[whoop_recent_workouts]")
         for r in sorted(workouts, key=lambda x: str(x.get("date"))):
             date = str(r.get("date"))
-            sport = r.get("sport")
+            activity = r.get("activity")
             dur_str = _fmt_minutes_to_hm(r.get("duration_min"))
             strain = r.get("strain")
             avg_hr = r.get("avg_hr_bpm")
@@ -319,7 +321,7 @@ def load_whoop_recent(
 
             parts = [
                 f"- {date}:",
-                f"{sport}" if sport not in (None, "") else "workout",
+                f"{activity}" if activity not in (None, "") else "workout",
                 f"duration {dur_str}" if dur_str else "",
                 f"strain {strain}" if strain not in (None, "") else "",
                 f"avg HR {avg_hr} bpm" if avg_hr not in (None, "") else "",

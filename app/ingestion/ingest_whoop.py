@@ -56,6 +56,7 @@ def main(src: str, out: str):
                 nlow = name.lower()
                 try:
                     if "sleep" in nlow:
+                        print(f"Processing sleeps from {fp}")
                         dff = df.copy()
                         # unify date
                         if "date" not in dff.columns:
@@ -66,7 +67,7 @@ def main(src: str, out: str):
                             date = str(r.get("date")) if pd.notna(r.get("date")) else ""
                             if not date:
                                 continue
-                            score = pick_column(r, ["sleep_performance", "sleep_score", "score", "Sleep score %"])  # percent/score
+                            score = pick_column(r, ["sleep_performance", "sleep_score", "score", "Sleep performance %"])  # percent/score
                             parts = [
                                 f"WHOOP sleep {date}:",
                                 f"score {score}" if score not in (None, "") else "",
@@ -83,6 +84,7 @@ def main(src: str, out: str):
                                 })
 
                     if "physiological_cycles" in nlow or "physiological" in nlow or "recovery" in nlow:
+                        print(f"Processing physiological cycles from {fp}")
                         dff = df.copy()
                         if "date" not in dff.columns:
                             dff["date"] = dff.apply(lambda r: parse_date_any(r, [
@@ -92,12 +94,14 @@ def main(src: str, out: str):
                             date = str(r.get("date")) if pd.notna(r.get("date")) else ""
                             if not date:
                                 continue
+                            strain = pick_column(r, ["strain", "Day Strain"])
                             rec = pick_column(r, ["recovery_score", "recovery", "score", "Recovery score %"])  # percent/score
                             # rhr = pick_column(r, ["resting_heart_rate", "rhr", "Resting heart rate (bpm)"])  # bpm
                             hrv = pick_column(r, ["hrv", "hrv_rmssd_milli", "rmssd", "Heart rate variability (ms)"])  # ms
                             parts = [
                                 f"WHOOP recovery {date}:",
-                                f"score {rec}" if rec not in (None, "") else "",
+                                f"strain {strain}" if strain not in (None, "") else "",
+                                f"recovery {rec}" if rec not in (None, "") else "",
                                 # f"RHR {rhr} bpm" if rhr not in (None, "") else "",
                                 f"HRV {hrv} ms" if hrv not in (None, "") else "",
                             ]
@@ -111,6 +115,39 @@ def main(src: str, out: str):
                                     "date": date,
                                     "ingested_at": datetime.now(UTC).isoformat(timespec='seconds') + "Z",
                                 })
+
+                    if "workouts" in nlow:
+                        print(f"Processing workouts from {fp}")
+                        dff = df.copy()
+                        # unify date
+                        if "date" not in dff.columns:
+                            dff["date"] = dff.apply(lambda r: parse_date_any(r, [
+                                "date", "day", "Cycle start time"
+                            ]), axis=1)
+                        for _, r in dff.iterrows():
+                            date = str(r.get("date")) if pd.notna(r.get("date")) else ""
+                            if not date:
+                                continue
+                            activity = pick_column(r, ["sport", "activity_type", "activity_type_name", "Activity type"])
+                            duration = pick_column(r, ["duration", "workout_duration", "Duration (minutes)"])
+                            strain = pick_column(r, ["strain", "Activity Strain"])
+                            parts = [
+                                f"WHOOP workout {date}:",
+                                f"activity {activity}" if activity not in (None, "") else "",
+                                f"duration {duration}" if duration not in (None, "") else "",
+                                f"strain {strain}" if strain not in (None, "") else "",
+                            ]
+                            line = " ".join([p for p in parts if p]).strip()
+                            if line and line != f"WHOOP workout {date}:":
+                                corpus_rows.append({
+                                    "text": line,
+                                    "source": os.path.relpath(fp),
+                                    "source_type": "whoop",
+                                    "whoop_type": "workout",
+                                    "date": date,
+                                    "ingested_at": datetime.now(UTC).isoformat(timespec='seconds') + "Z",
+                                })
+
                 except Exception as _:
                     # keep ingestion resilient; skip enriched corpus on any error
                     pass
