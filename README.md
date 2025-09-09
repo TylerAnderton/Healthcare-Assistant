@@ -14,7 +14,7 @@ A local-first chatbot to understand your healthcare data (labs PDFs, medications
 ## Quickstart
 1. Install Ollama and a model:
    - https://ollama.com/download
-   - Recommended chat model: `ollama pull llama3.1:8b`
+   - Recommended chat model: `ollama pull qwen3:14b`
 2. Python env
    - `python -m venv .venv && source .venv/bin/activate`
    - `pip install -r requirements.txt`
