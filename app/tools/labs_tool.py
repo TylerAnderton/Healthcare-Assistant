@@ -36,6 +36,13 @@ def _safe_float(x) -> Optional[float]:
 
 
 def list_analytes(prefix: Optional[str] = None, table_path: Optional[str] = None) -> List[str]:
+    """
+    Return a list of all unique lab analytes.
+
+    Args:
+        prefix: Optional prefix to filter analytes by.
+        table_path: Optional path to the labs table.
+    """
     df = _load_df(table_path)
     if df is None or "analyte" not in df.columns:
         logger.warning(f'No valid labs table found at {table_path}')
@@ -49,6 +56,13 @@ def list_analytes(prefix: Optional[str] = None, table_path: Optional[str] = None
 
 
 def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
+    """
+    Return the latest value for a lab analyte.
+
+    Args:
+        analyte: Name of the lab analyte.
+        table_path: Optional path to the labs table.
+    """
     df = _load_df(table_path)
     if df is None or "analyte" not in df.columns or "value" not in df.columns:
         logger.warning(f'No valid labs table found at {table_path}')
@@ -74,6 +88,15 @@ def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dic
 
 
 def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, table_path: Optional[str] = None) -> List[Dict]:
+    """
+    Return recent history for a lab analyte.
+
+    Args:
+        analyte: Name of the lab analyte, e.g., "ALT (SGPT)".
+        limit: Max number of rows to return.
+        ascending: Sort order by date.
+        table_path: Optional path to the labs table.
+    """
     df = _load_df(table_path)
     if df is None or "analyte" not in df.columns:
         logger.warning(f'No valid labs table found at {table_path}')
@@ -90,6 +113,13 @@ def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, t
 
 
 def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
+    """
+    Return a summary for a lab analyte (last value/date, delta, unit, ref range).
+
+    Args:
+        analyte: Name of the lab analyte.
+        table_path: Optional path to the labs table.
+    """
     logger.info(f'Building summary for {analyte}')
     df = _load_df(table_path)
 

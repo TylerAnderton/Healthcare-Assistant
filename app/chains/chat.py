@@ -274,6 +274,29 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
         MT = None
 
     # Define callable tools that the model can invoke
+    # Labs Tools
+    def labs_list_analytes_tool(prefix: Optional[str] = None, table_path: Optional[str] = None) -> List[str]:
+        """Return a list of all unique lab analytes.
+
+        Args:
+            prefix: Optional prefix to filter analytes by.
+            table_path: Optional path to the labs table.
+        """
+        if LT is None:
+            return []
+        return LT.list_analytes(prefix=prefix, table_path=table_path)
+    
+    def labs_latest_value_tool(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
+        """Return the latest value for a lab analyte.
+
+        Args:
+            analyte: Name of the lab analyte.
+            table_path: Optional path to the labs table.
+        """
+        if LT is None:
+            return None
+        return LT.latest_value(analyte, table_path=table_path)
+    
     def labs_history_tool(analyte: str, limit: int = 10, ascending: bool = True) -> List[Dict[str, Any]]:
         """Return recent history for a lab analyte.
 
@@ -321,13 +344,21 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
                 }
         return {}
 
-    def meds_timeline_tool() -> str:
-        """Return a compact medication dosing timeline from structured data."""
-        try:
-            return load_meds_timeline() or ""
-        except Exception:
-            return ""
+    # Meds Tools
+    # def meds_timeline_tool() -> str: # Meds timeline is already in the structured context... why would we add it as a tool?...
+    #     """Return a compact medication dosing timeline from structured data."""
+    #     try:
+    #         return load_meds_timeline() or ""
+    #     except Exception:
+    #         return ""
+    
+    def meds_list_current_tool(date: Optional[str|None] = None) -> dict:
+        """Return a list of current medications and dosages on a given date."""
+        if MT is None:
+            return {}
+        return MT.list_current(date=date)
 
+    # Whoop Tools
     def whoop_recovery_strain_on_date_tool(date: str) -> Dict[str, Any]:
         """Return WHOOP recovery score and day strain for an exact date (YYYY-MM-DD).
 
@@ -349,10 +380,15 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
         return {}
 
     tools = [
+        # Labs Tools
+        labs_list_analytes_tool,
+        labs_latest_value_tool,
         labs_history_tool,
         labs_summary_tool,
         labs_value_on_date_tool,
-        meds_timeline_tool,
+        # Meds Tools
+        meds_list_current_tool,
+        # Whoop Tools
         whoop_recovery_strain_on_date_tool,
     ]
 
@@ -375,12 +411,16 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
             try:
                 if name == "labs_history_tool":
                     result = labs_history_tool(**args)
+                elif name == "labs_list_analyte_tool":
+                    result = labs_list_analytes_tool(**args)
+                elif name == "labs_latest_value_tool":
+                    result = labs_latest_value_tool(**args)
                 elif name == "labs_summary_tool":
                     result = labs_summary_tool(**args)
                 elif name == "labs_value_on_date_tool":
                     result = labs_value_on_date_tool(**args)
-                elif name == "meds_timeline_tool":
-                    result = meds_timeline_tool()
+                elif name == "meds_list_current_tool":
+                    result = meds_list_current_tool(**args)
                 elif name == "whoop_recovery_strain_on_date_tool":
                     result = whoop_recovery_strain_on_date_tool(**args)
                 else:
