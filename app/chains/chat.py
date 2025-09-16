@@ -345,13 +345,46 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
         return {}
 
     # Meds Tools
-    # def meds_timeline_tool() -> str: # Meds timeline is already in the structured context... why would we add it as a tool?...
-    #     """Return a compact medication dosing timeline from structured data."""
-    #     try:
-    #         return load_meds_timeline() or ""
-    #     except Exception:
-    #         return ""
-    
+    def meds_timeline_tool() -> str:
+        """Return a compact medication dosing timeline from structured data."""
+        try:
+            return load_meds_timeline() or ""
+        except Exception:
+            return ""
+
+    def meds_history_tool(medication: str, fuzzy: bool = True) -> List[Dict[str, Any]]:
+        """Return the chronological dosing history for a medication.
+
+        Args:
+            medication: Name of the medication to search for.
+            fuzzy: If True, enable fuzzy matching on the medication name.
+        """
+        if MT is None:
+            return []
+        try:
+            return MT.get_medication_history(medication, fuzzy=fuzzy)
+        except Exception:
+            return []
+
+    def meds_dosage_on_date_tool(medication: str, date: Optional[str] = None, fuzzy: bool = True) -> Dict[str, Any]:
+        """Return the dose/frequency for a medication on a specific date (YYYY-MM-DD). If date is omitted, use today.
+
+        Args:
+            medication: Name of the medication to search for.
+            date: Date in YYYY-MM-DD to query. If None, defaults to today.
+            fuzzy: If True, enable fuzzy matching on the medication name.
+        """
+        if MT is None:
+            return {}
+        try:
+            return MT.dosage_on_date(medication, date, fuzzy=fuzzy)
+        except Exception:
+            return {}
+
+    def meds_list_medications_tool() -> List[str]:
+        """Return a list of medications."""
+        return MT.list_medications()
+
     def meds_list_current_tool(date: Optional[str|None] = None) -> dict:
         """Return a list of current medications and dosages on a given date."""
         if MT is None:
@@ -387,6 +420,10 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
         labs_summary_tool,
         labs_value_on_date_tool,
         # Meds Tools
+        meds_timeline_tool,
+        meds_history_tool,
+        meds_dosage_on_date_tool,
+        meds_list_medications_tool,
         meds_list_current_tool,
         # Whoop Tools
         whoop_recovery_strain_on_date_tool,
@@ -411,7 +448,7 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
             try:
                 if name == "labs_history_tool":
                     result = labs_history_tool(**args)
-                elif name == "labs_list_analyte_tool":
+                elif name == "labs_list_analytes_tool":
                     result = labs_list_analytes_tool(**args)
                 elif name == "labs_latest_value_tool":
                     result = labs_latest_value_tool(**args)
@@ -419,12 +456,22 @@ def _answer_with_tools(llm: ChatOllama, prompt: ChatPromptTemplate) -> str:
                     result = labs_summary_tool(**args)
                 elif name == "labs_value_on_date_tool":
                     result = labs_value_on_date_tool(**args)
+
+                elif name == "meds_history_tool":
+                    result = meds_history_tool(**args)
+                elif name == "meds_dosage_on_date_tool":
+                    result = meds_dosage_on_date_tool(**args)
+                elif name == "meds_list_medications_tool":
+                    result = meds_list_medications_tool(**args)
                 elif name == "meds_list_current_tool":
                     result = meds_list_current_tool(**args)
+
                 elif name == "whoop_recovery_strain_on_date_tool":
                     result = whoop_recovery_strain_on_date_tool(**args)
+
                 else:
                     result = {"error": f"Unknown tool: {name}"}
+
             except Exception as e:
                 logger.exception("Tool execution failed: %s", name)
                 result = {"error": f"Exception in {name}: {e}"}

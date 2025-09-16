@@ -50,11 +50,12 @@ def regenerate_labs():
     print("Wrote", dst)
 
 
-def regenerate_meds():
+def regenerate_meds(n_cases: int = 5):
     fp = PROCESSED / "meds.parquet"
     if not fp.exists():
         print(f"meds parquet not found: {fp}")
         return
+
     md = pd.read_parquet(fp)
     # Heuristic to build event list mirroring load_meds_timeline
     name_col = None
@@ -76,15 +77,18 @@ def regenerate_meds():
         nm = _safe_str(r.get(name_col)).strip()
         if not nm:
             continue
+
         dose = _safe_str(r.get(dose_cols[0])) if dose_cols else ""
         dunit = _safe_str(r.get(dose_unit_cols[0])) if dose_unit_cols else ""
         freq = _safe_str(r.get(freq_cols[0])) if freq_cols else ""
         funit = _safe_str(r.get(freq_unit_cols[0])) if freq_unit_cols else ""
-        def add(dt, kind):
+
+        def add(dt: str, kind: str):
             dt = _safe_str(dt)
             if not dt or dt == 'NaT':
                 return
             grouped[nm].append({"date": dt[:10], "kind": kind, "dose": dose, "dose_unit": dunit, "freq": freq, "freq_unit": funit})
+
         for c in start_cols: add(r.get(c), "start")
         for c in updated_cols: add(r.get(c), "dose_change")
         for c in end_cols: add(r.get(c), "stop")
@@ -94,7 +98,7 @@ def regenerate_meds():
         if len(evs) >= 2:
             evs = sorted(evs, key=lambda x: x["date"])[:5]
             cases.append({"med": med, "events": evs})
-        if len(cases) >= 3:
+        if len(cases) >= n_cases:
             break
 
     dst = FIXTURES / "meds.json"
@@ -183,13 +187,14 @@ def regenerate_prompts():
 
 def cli(argv=None):
     p = argparse.ArgumentParser(description="Regenerate test fixtures from parquet tables")
-    p.add_argument("--whoop-days", type=int, default=7, help="Number of recent days to include in WHOOP fixture")
+    p.add_argument("--whoop-days", "-w", type=int, default=7, help="Number of recent days to include in WHOOP fixture")
+    p.add_argument("--meds-cases", "-m", type=int, default=5, help="Number of medications to include in meds fixture")
     args = p.parse_args(argv)
 
     FIXTURES.mkdir(parents=True, exist_ok=True)
 
     regenerate_labs()
-    regenerate_meds()
+    regenerate_meds(n_cases=args.meds_cases)
     regenerate_whoop(days=args.whoop_days)
     regenerate_prompts()
 
