@@ -1,14 +1,23 @@
 import argparse
 import os
-import glob
 import pandas as pd
 from datetime import datetime, UTC
 import logging
 
-from app.tools.whoop_tool import pick_column, parse_date_any
+from app.constants import (
+    WHOOP_SLEEPS_RAW_COLS,
+    WHOOP_TABLE_FILES,
+    WHOOP_CORPUS_FILE,
+    WHOOP_SLEEPS_RAW_COLS,
+    WHOOP_WORKOUTS_RAW_COLS,
+    WHOOP_RECOVERY_RAW_COLS,
+)
 
 from dotenv import load_dotenv
 load_dotenv()
+
+DATA_DIR = os.getenv("DATA_DIR", "./data")
+PROCESSED_DIR = os.getenv("PROCESSED_DIR", "./data/processed")
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +31,14 @@ def main(src: str, out: str):
     corpus_rows = []
 
     # Load known CSVs if present
-    targets = [
-        "sleeps.csv",
-        "workouts.csv",
-        "physiological_cycles.csv",
-        "journal_entries.csv",
-    ]
+    # Build mapping from expected CSV filename -> standardized parquet filename
+    csv_to_parquet = {f"{key}.csv": parquet for key, parquet in WHOOP_TABLE_FILES.items()}
 
     found_any = False
 
     for root, _, files in os.walk(src):
         for name in files:
-            if name in targets:
+            if name in csv_to_parquet:
                 found_any = True
                 fp = os.path.join(root, name)
                 try:
@@ -42,7 +47,7 @@ def main(src: str, out: str):
                     logger.error(f"Failed to read {fp}: {e}")
                     continue
                 # Save tables as-is for now
-                out_fp = os.path.join(out, "tables", f"whoop_{os.path.splitext(name)[0]}.parquet")
+                out_fp = os.path.join(out, "tables", csv_to_parquet[name])
                 df.to_parquet(out_fp)
 
                 # Lightweight file corpus entry (kept for provenance)
@@ -61,15 +66,11 @@ def main(src: str, out: str):
                         logger.info(f"Processing sleeps from {fp}")
                         dff = df.copy()
                         # unify date
-                        if "date" not in dff.columns:
-                            dff["date"] = dff.apply(lambda r: parse_date_any(r, [
-                                "date", "day", "Cycle start time"
-                            ]), axis=1)
                         for _, r in dff.iterrows():
-                            date = str(r.get("date")) if pd.notna(r.get("date")) else ""
+                            date = str(r.get(WHOOP_SLEEPS_RAW_COLS[0]))
                             if not date:
                                 continue
-                            score = pick_column(r, ["sleep_performance", "sleep_score", "score", "Sleep performance %"])  # percent/score
+                            score = r.get(WHOOP_SLEEPS_RAW_COLS[1])  # percent/score
                             parts = [
                                 f"WHOOP sleep {date}:",
                                 f"score {score}" if score not in (None, "") else "",
@@ -85,21 +86,17 @@ def main(src: str, out: str):
                                     "ingested_at": datetime.now(UTC).isoformat(timespec='seconds') + "Z",
                                 })
 
-                    if "physiological_cycles" in nlow or "physiological" in nlow or "recovery" in nlow:
+                    if "physiological_cycles" in nlow:
                         logger.info(f"Processing physiological cycles from {fp}")
                         dff = df.copy()
-                        if "date" not in dff.columns:
-                            dff["date"] = dff.apply(lambda r: parse_date_any(r, [
-                                "date", "cycle_date", "start", "day", "Cycle start time"
-                            ]), axis=1)
                         for _, r in dff.iterrows():
-                            date = str(r.get("date")) if pd.notna(r.get("date")) else ""
+                            date = str(r.get(WHOOP_RECOVERY_RAW_COLS[0]))
                             if not date:
                                 continue
-                            strain = pick_column(r, ["strain", "Day Strain"])
-                            rec = pick_column(r, ["recovery_score", "recovery", "score", "Recovery score %"])  # percent/score
-                            # rhr = pick_column(r, ["resting_heart_rate", "rhr", "Resting heart rate (bpm)"])  # bpm
-                            hrv = pick_column(r, ["hrv", "hrv_rmssd_milli", "rmssd", "Heart rate variability (ms)"])  # ms
+                            strain = r.get(WHOOP_RECOVERY_RAW_COLS[1])
+                            rec = r.get(WHOOP_RECOVERY_RAW_COLS[2])
+                            # rhr = r.get(WHOOP_RECOVERY_RAW_COLS[3])
+                            hrv = r.get(WHOOP_RECOVERY_RAW_COLS[4])
                             parts = [
                                 f"WHOOP recovery {date}:",
                                 f"strain {strain}" if strain not in (None, "") else "",
@@ -122,17 +119,13 @@ def main(src: str, out: str):
                         logger.info(f"Processing workouts from {fp}")
                         dff = df.copy()
                         # unify date
-                        if "date" not in dff.columns:
-                            dff["date"] = dff.apply(lambda r: parse_date_any(r, [
-                                "date", "day", "Cycle start time"
-                            ]), axis=1)
                         for _, r in dff.iterrows():
-                            date = str(r.get("date")) if pd.notna(r.get("date")) else ""
+                            date = str(r.get(WHOOP_WORKOUTS_RAW_COLS[0]))
                             if not date:
                                 continue
-                            activity = pick_column(r, ["sport", "activity_type", "activity_type_name", "Activity type"])
-                            duration = pick_column(r, ["duration", "workout_duration", "Duration (minutes)"])
-                            strain = pick_column(r, ["strain", "Activity Strain"])
+                            activity = r.get(WHOOP_WORKOUTS_RAW_COLS[1])
+                            duration = r.get(WHOOP_WORKOUTS_RAW_COLS[2])
+                            strain = r.get(WHOOP_WORKOUTS_RAW_COLS[3])
                             parts = [
                                 f"WHOOP workout {date}:",
                                 f"activity {activity}" if activity not in (None, "") else "",
@@ -151,7 +144,7 @@ def main(src: str, out: str):
                                 })
 
                 except Exception as _:
-                    # keep ingestion resilient; skip enriched corpus on any error
+                    logger.warning(f"Failed to process {fp}")
                     pass
 
     if not found_any:
@@ -159,14 +152,14 @@ def main(src: str, out: str):
 
     if corpus_rows:
         cdf = pd.DataFrame(corpus_rows)
-        cdf.to_parquet(os.path.join(out, "corpus", "whoop_corpus.parquet"))
+        cdf.to_parquet(os.path.join(out, "corpus", WHOOP_CORPUS_FILE))
         logger.info(f"Wrote WHOOP corpus: {len(cdf)} rows")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    default_src = os.path.join(os.getenv("DATA_DIR", "./data"), "whoop")
+    default_src = os.path.join(DATA_DIR, "whoop")
     parser.add_argument("--src", default=default_src)
-    parser.add_argument("--out", default=os.getenv("PROCESSED_DIR", "./data/processed"))
+    parser.add_argument("--out", default=PROCESSED_DIR)
     args = parser.parse_args()
     main(args.src, args.out)

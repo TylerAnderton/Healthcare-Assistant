@@ -14,6 +14,7 @@ from app.ingestion.utils_pdf import extract_pdf_pages
 from app.ingestion.vendors import labcorp as v_labcorp
 from app.ingestion.vendors import letsgetchecked as v_lgc
 from app.ingestion.vendors import ways2well as v_w2w
+from app.constants import LABS_PROCESSED_COLS
 
 logger = logging.getLogger(__name__)
 
@@ -92,19 +93,7 @@ def main(src: str, out: str):
     if structured_rows:
         tdf = pd.DataFrame(structured_rows)
         # Ensure columns exist
-        for col in [
-            "analyte",
-            "value",
-            "unit",
-            "ref_low",
-            "ref_high",
-            "date",
-            "source",
-            "page",
-            "source_type",
-            "vendor",
-            "flag",
-        ]:
+        for col in LABS_PROCESSED_COLS:
             if col not in tdf.columns:
                 tdf[col] = None
         tdf.to_parquet(os.path.join(out, "tables", "labs.parquet"))

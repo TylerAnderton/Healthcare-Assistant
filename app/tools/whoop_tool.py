@@ -4,45 +4,45 @@ from datetime import datetime, timedelta, UTC
 import pandas as pd
 from typing import Dict, List, Optional
 
+from app.constants import (
+    WHOOP_TABLE_FILES,
+    WHOOP_SLEEPS_RAW_COLS,
+    WHOOP_SLEEPS_PROCESSED_COLS,
+    WHOOP_RECOVERY_RAW_COLS,
+    WHOOP_RECOVERY_PROCESSED_COLS,
+    WHOOP_WORKOUTS_RAW_COLS,
+    WHOOP_WORKOUTS_PROCESSED_COLS,
+)
+
 BASE = os.path.join(os.getenv("PROCESSED_DIR", "./data/processed"), "tables")
 
 
 def quick_summary() -> Dict[str, int]:
-    out = {}
-    for name in ["sleeps", "workouts", "physiological_cycles", "journal_entries"]:
-        fp = os.path.join(BASE, f"whoop_{name}.parquet")
+    out: Dict[str, int] = {}
+    for key, parquet in WHOOP_TABLE_FILES.items():
+        fp = os.path.join(BASE, parquet)
         if os.path.exists(fp):
             try:
                 df = pd.read_parquet(fp)
-                out[name] = len(df)
+                out[key] = len(df)
             except Exception:
                 pass
     return out
 
 
-def pick_column(row: pd.Series, candidates: List[str]):
-    for c in candidates:
-        if c in row and pd.notna(row[c]):
-            return row[c]
-    return None
-
-
-def parse_date_any(row: pd.Series, candidates):
-    val = pick_column(row, candidates)
-    if val is None:
-        return ""
-    try:
-        s = str(val)
-        if "T" in s:
-            s = s.split("T", 1)[0]
-        # simple normalization; if not ISO, return prefix
+# Deterministic mapping helper
+def _map_row(row: pd.Series, raw_cols: List[str], processed_cols: List[str]) -> Dict[str, Optional[object]]:
+    out: Dict[str, Optional[object]] = {}
+    for i, pcol in enumerate(processed_cols):
         try:
-            dt = datetime.fromisoformat(s)
-            return dt.date().isoformat()
-        except Exception:
-            return s[:10]
-    except Exception:
-        return ""
+            rcol = raw_cols[i]
+        except IndexError:
+            rcol = None
+        out[pcol] = row.get(rcol) if rcol is not None else None
+    # Ensure date is serialized to string
+    if "date" in out:
+        out["date"] = None if out["date"] is None else str(out["date"])  
+    return out
 
 # Internal helpers
 def _load_df(table_path: str) -> Optional[pd.DataFrame]:
@@ -68,29 +68,6 @@ def _safe_float(x) -> Optional[float]:
         return None
 
 
-def _norm_date_str(val) -> str:
-    try:
-        s = str(val)
-        if not s:
-            return ""
-        if "T" in s:
-            s = s.split("T", 1)[0]
-        try:
-            dt = datetime.fromisoformat(s)
-            return dt.date().isoformat()
-        except Exception:
-            return s[:10]
-    except Exception:
-        return ""
-
-
-def _ensure_date_col(df: pd.DataFrame, candidates: List[str]) -> pd.DataFrame:
-    if "date" not in df.columns:
-        df = df.copy()
-        df["date"] = df.apply(lambda r: _norm_date_str(pick_column(r, candidates)), axis=1)
-    return df
-
-
 def _filter_date_range(df: pd.DataFrame, start: Optional[str], end: Optional[str]) -> pd.DataFrame:
     dff = df.copy()
     if start:
@@ -100,10 +77,10 @@ def _filter_date_range(df: pd.DataFrame, start: Optional[str], end: Optional[str
     return dff
 
 
-# Public API
-SLEEPS_PATH = os.path.join(BASE, "whoop_sleeps.parquet")
-RECOVERY_PATH = os.path.join(BASE, "whoop_physiological_cycles.parquet")
-WORKOUTS_PATH = os.path.join(BASE, "whoop_workouts.parquet")
+# Public API (derive from centralized mapping)
+SLEEPS_PATH = os.path.join(BASE, WHOOP_TABLE_FILES.get("sleeps", "whoop_sleeps.parquet"))
+RECOVERY_PATH = os.path.join(BASE, WHOOP_TABLE_FILES.get("physiological_cycles", "whoop_physiological_cycles.parquet"))
+WORKOUTS_PATH = os.path.join(BASE, WHOOP_TABLE_FILES.get("workouts", "whoop_workouts.parquet"))
 
 
 def sleeps(
@@ -121,7 +98,6 @@ def sleeps(
     df = _load_df(tp)
     if df is None:
         return []
-    df = _ensure_date_col(df, ["date", "day", "Cycle start time"])  # type: ignore
     dff = df[df["date"].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
@@ -131,21 +107,8 @@ def sleeps(
         dff = dff.head(limit) if ascending else dff.tail(limit)
     out: List[Dict] = []
     for _, r in dff.iterrows():
-        out.append({
-            "date": str(r.get("date")),
-            "sleep_score": pick_column(r, ["sleep_performance", "sleep_score", "score", "Sleep performance %"]),
-            # TODO: Apply time zone conversion with "Cycle timezone" column
-            "sleep_start_time": pick_column(r, ["sleep_start", "start_time", "Sleep onset"]),
-            "inbed_duration_min": pick_column(r, ["In bed duration (min)"]),
-            "asleep_duration_min": pick_column(r, ["Asleep duration (min)"]),
-            "light_sleep_duration_min": pick_column(r, ["Light sleep duration (min)"]),
-            "deep_sleep_duration_min": pick_column(r, ["Deep (SWS) duration (min)"]),
-            "rem_sleep_duration_min": pick_column(r, ["REM duration (min)"]),
-            "awake_duration_min": pick_column(r, ["Awake duration (min)"]),
-            "efficiency_pct": pick_column(r, ["sleep_efficiency", "efficiency", "Sleep efficiency %"]),
-            "consistency_pct": pick_column(r, ["sleep_consistency", "consistency", "Sleep consistency %"]),
-            "nap": pick_column(r, ["nap", "Nap"]),
-        })
+        mapped = _map_row(r, WHOOP_SLEEPS_RAW_COLS, WHOOP_SLEEPS_PROCESSED_COLS)
+        out.append(mapped)
     return out
 
 
@@ -165,7 +128,6 @@ def recovery(
     df = _load_df(tp)
     if df is None:
         return []
-    df = _ensure_date_col(df, ["date", "cycle_date", "start", "day", "Cycle start time"])  # type: ignore
     dff = df[df["date"].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
@@ -175,13 +137,8 @@ def recovery(
         dff = dff.head(limit) if ascending else dff.tail(limit)
     out: List[Dict] = []
     for _, r in dff.iterrows():
-        out.append({
-            "date": str(r.get("date")),
-            "strain": pick_column(r, ["strain", "Day Strain"]),
-            "recovery_score": pick_column(r, ["recovery_score", "recovery", "score", "Recovery score %"]),
-            "rhr_bpm": pick_column(r, ["resting_heart_rate", "rhr", "Resting heart rate (bpm)"]),
-            "hrv_ms": pick_column(r, ["hrv", "hrv_rmssd_milli", "rmssd", "Heart rate variability (ms)"]),
-        })
+        mapped = _map_row(r, WHOOP_RECOVERY_RAW_COLS, WHOOP_RECOVERY_PROCESSED_COLS)
+        out.append(mapped)
     return out
 
 
@@ -200,30 +157,17 @@ def workouts(
     df = _load_df(tp)
     if df is None:
         return []
-    df = _ensure_date_col(df, ["date", "start", "workout_start", "start_time", "Cycle start time"])  # type: ignore
-    dff = df[df["date"].astype(str) != ""].copy()
+    dff = df[df[WHOOP_WORKOUTS_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
         return []
-    dff = dff.sort_values("date", ascending=ascending)
+    dff = dff.sort_values(WHOOP_WORKOUTS_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
         dff = dff.head(limit) if ascending else dff.tail(limit)
     out: List[Dict] = []
     for _, r in dff.iterrows():
-        out.append({
-            "date": str(r.get("date")),
-            "activity": pick_column(r, ["sport", "activity", "type", "Activity name"]),
-            "duration_min": pick_column(r, ["duration", "workout_duration", "Duration (minutes)"]),
-            "strain": pick_column(r, ["strain", "Activity Strain"]),
-            "avg_hr_bpm": pick_column(r, ["average_heart_rate", "avg_hr", "Average HR (bpm)"]),
-            "max_hr_bpm": pick_column(r, ["max_heart_rate", "max_hr", "Max HR (bpm)"]),
-            "calories": pick_column(r, ["calories", "kcal", "Energy burned (cal)"]),
-            "hr_zone_1": pick_column(r, ["hr_zone_1", "HR Zone 1 %"]),
-            "hr_zone_2": pick_column(r, ["hr_zone_2", "HR Zone 2 %"]),
-            "hr_zone_3": pick_column(r, ["hr_zone_3", "HR Zone 3 %"]),
-            "hr_zone_4": pick_column(r, ["hr_zone_4", "HR Zone 4 %"]),
-            "hr_zone_5": pick_column(r, ["hr_zone_5", "HR Zone 5 %"]),
-        })
+        mapped = _map_row(r, WHOOP_WORKOUTS_RAW_COLS, WHOOP_WORKOUTS_PROCESSED_COLS)
+        out.append(mapped)
     return out
 
 

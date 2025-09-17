@@ -8,6 +8,8 @@ TABLE_PATH = os.path.join(os.getenv("PROCESSED_DIR", "./data/processed"), "table
 
 logger = logging.getLogger(__name__)
 
+from app.constants import LABS_PROCESSED_COLS
+
 def _load_df(table_path: Optional[str] = None) -> Optional[pd.DataFrame]:
     tp = table_path or TABLE_PATH
     if not os.path.exists(tp):
@@ -73,6 +75,7 @@ def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dic
         return None
     dff = dff.sort_values("date", ascending=False)
     r = dff.iloc[0]
+    # TODO: Use LABS_PROCESSED_COLS
     return {
         "analyte": str(r.get("analyte", analyte)),
         "value": r.get("value"),
@@ -154,6 +157,7 @@ def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
         if rh is not None and last_val > rh:
             out_of_range = "HIGH"
 
+    # TODO: Use LABS_PROCESSED_COLS
     return {
         "analyte": str(last.get("analyte", analyte)),
         "count": int(len(dff)),
@@ -192,7 +196,13 @@ def latest_panel(limit: int = 15, table_path: Optional[str] = None) -> List[Dict
         panel = panel.sort_values("analyte")
     if limit is not None and limit > 0:
         panel = panel.head(limit)
-    cols = [c for c in [
+    # TODO: Use LABS_PROCESSED_COLS
+    # Reuse centralized schema to select known columns in a consistent order
+    preferred_cols = [
         "analyte", "value", "unit", "date", "ref_low", "ref_high", "flag", "vendor", "source", "page"
-    ] if c in panel.columns]
+    ]
+    # Ensure we only select columns that exist; fall back to LABS_PROCESSED_COLS order if needed
+    cols = [c for c in preferred_cols if c in panel.columns]
+    if not cols:
+        cols = [c for c in LABS_PROCESSED_COLS if c in panel.columns]
     return panel[cols].to_dict(orient="records")
