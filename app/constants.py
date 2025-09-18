@@ -27,6 +27,8 @@ LABS_PROCESSED_COLS: List[str] = [
     "previous_value",
 ]
 
+LABS_TABLE_FILE: str = "labs.parquet"
+LABS_CORPUS_FILE: str = "labs_corpus.parquet"
 
 # Medications raw table schema
 MEDS_RAW_COLS: List[str] = [

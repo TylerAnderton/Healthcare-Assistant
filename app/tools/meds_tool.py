@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any
 import os
 import pandas as pd
 import logging
@@ -41,18 +41,18 @@ def _best_name_match(names: List[str], query: str) -> Tuple[str, float]:
     return scores[0]
 
 # ------ External Tools ------
-def list_current(date: Optional[str|None] = None) -> dict:
+def list_current(date: Optional[str|None] = None) -> List[Dict[str, Any]]:
     """
     Input:
         date: Date to query for current medications
     Returns:
-        A dictionary of current mediactions and dosages on a given date.
+        A list of current mediactions and dosages on a given date.
     """
     logger.info(f'Searching for current medications on date {date}')
 
     df = _load_df()
     if df is None:
-        return {}
+        return []
     
     # Parse target date (default to today if missing)
     if not date:
@@ -61,7 +61,7 @@ def list_current(date: Optional[str|None] = None) -> dict:
             date = pd.Timestamp.now().strftime("%Y-%m-%d")
         except Exception:
             logger.error('Failed to get current date')
-            return {}
+            return []
 
     try:
         dt = pd.to_datetime(date)
@@ -77,7 +77,7 @@ def list_current(date: Optional[str|None] = None) -> dict:
         df = df[mask].copy()
     except Exception:
         logger.warning(f'Failed to parse date when loading current medications: {date}')
-        return {}
+        return []
     
     # Keep 'current' in outputs so downstream tools can surface it
     drop_cols = [
@@ -85,10 +85,10 @@ def list_current(date: Optional[str|None] = None) -> dict:
         MEDS_DATE_COLS[2],
         MEDS_PROCESSED_COLS[-1],
     ]
-    df_dict = df.drop(columns=drop_cols).to_dict(orient='records')
+    df_dict_list = df.drop(columns=drop_cols).to_dict(orient='records')
 
-    logger.info(f'Found {len(df_dict)} current medications on date {date}')
-    return df_dict
+    logger.info(f'Found {len(df_dict_list)} current medications on date {date}')
+    return df_dict_list
 
 
 def list_medications() -> List[str]:

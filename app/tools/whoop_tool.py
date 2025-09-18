@@ -89,7 +89,7 @@ def sleeps(
     limit: Optional[int] = None,
     ascending: bool = True,
     table_path: Optional[str] = None,
-) -> List[Dict]:
+) -> pd.DataFrame:
     """Return key sleep metrics per date.
 
     Fields: date, sleep_score, rhr_bpm, hrv_ms, duration_sec, efficiency_pct
@@ -98,18 +98,17 @@ def sleeps(
     df = _load_df(tp)
     if df is None:
         return []
-    dff = df[df["date"].astype(str) != ""].copy()
+
+    dff = df[df[WHOOP_SLEEPS_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
         return []
-    dff = dff.sort_values("date", ascending=ascending)
+
+    dff = dff.sort_values(WHOOP_SLEEPS_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
         dff = dff.head(limit) if ascending else dff.tail(limit)
-    out: List[Dict] = []
-    for _, r in dff.iterrows():
-        mapped = _map_row(r, WHOOP_SLEEPS_RAW_COLS, WHOOP_SLEEPS_PROCESSED_COLS)
-        out.append(mapped)
-    return out
+
+    return dff
 
 
 # Physiological cycles
@@ -119,7 +118,7 @@ def recovery(
     limit: Optional[int] = None,
     ascending: bool = True,
     table_path: Optional[str] = None,
-) -> List[Dict]:
+) -> pd.DataFrame:
     """Return key recovery metrics per date.
 
     Fields: date, recovery_score, rhr_bpm, hrv_ms
@@ -128,18 +127,17 @@ def recovery(
     df = _load_df(tp)
     if df is None:
         return []
-    dff = df[df["date"].astype(str) != ""].copy()
+
+    dff = df[df[WHOOP_RECOVERY_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
         return []
-    dff = dff.sort_values("date", ascending=ascending)
+
+    dff = dff.sort_values(WHOOP_RECOVERY_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
         dff = dff.head(limit) if ascending else dff.tail(limit)
-    out: List[Dict] = []
-    for _, r in dff.iterrows():
-        mapped = _map_row(r, WHOOP_RECOVERY_RAW_COLS, WHOOP_RECOVERY_PROCESSED_COLS)
-        out.append(mapped)
-    return out
+
+    return dff
 
 
 def workouts(
@@ -148,7 +146,7 @@ def workouts(
     limit: Optional[int] = None,
     ascending: bool = True,
     table_path: Optional[str] = None,
-) -> List[Dict]:
+) -> pd.DataFrame:
     """Return basic workout metrics per date.
 
     Fields: date, activity, duration_min, strain, avg_hr_bpm, calories
@@ -157,21 +155,20 @@ def workouts(
     df = _load_df(tp)
     if df is None:
         return []
+
     dff = df[df[WHOOP_WORKOUTS_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
         return []
+
     dff = dff.sort_values(WHOOP_WORKOUTS_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
         dff = dff.head(limit) if ascending else dff.tail(limit)
-    out: List[Dict] = []
-    for _, r in dff.iterrows():
-        mapped = _map_row(r, WHOOP_WORKOUTS_RAW_COLS, WHOOP_WORKOUTS_PROCESSED_COLS)
-        out.append(mapped)
-    return out
+
+    return dff
 
 
-def recent(days: int = 7) -> Dict[str, List[Dict]]:
+def recent(days: int = 7) -> Dict[str, pd.DataFrame]:
     """Return recent sleeps, recovery, and workouts within the last `days`."""
     today = datetime.now(UTC).date()
     start = (today - timedelta(days=max(0, days - 1))).isoformat()
