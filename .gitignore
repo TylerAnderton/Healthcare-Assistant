@@ -7,3 +7,5 @@ __pycache__
 
 data/
 tests/fixtures/
+
+ingestion_check.ipynb
