@@ -131,17 +131,17 @@ WHOOP_RECOVERY_COL_MAP: Dict[str, str] = dict(zip(WHOOP_RECOVERY_RAW_COLS, WHOOP
 
 WHOOP_WORKOUTS_RAW_COLS: List[str] = [
     "Cycle start time",
-    "Activity",
+    "Activity name",
     "Duration (min)",
-    "Day Strain",
-    "Average heart rate (bpm)",
-    "Max heart rate (bpm)",
-    "Calories",
-    "Heart rate zone 1",
-    "Heart rate zone 2",
-    "Heart rate zone 3",
-    "Heart rate zone 4",
-    "Heart rate zone 5",
+    "Activity Strain",
+    "Average HR (bpm)",
+    "Max HR (bpm)",
+    "Energy burned (cal)",
+    "HR Zone 1 %",
+    "HR Zone 2 %",
+    "HR Zone 3 %",
+    "HR Zone 4 %",
+    "HR Zone 5 %",
 ]
 
 WHOOP_WORKOUTS_PROCESSED_COLS: List[str] = [

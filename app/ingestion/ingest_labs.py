@@ -104,7 +104,7 @@ def main(src: str, out: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    default_src = os.path.join(os.getenv("DATA_DIR", "./data/raw"), "labs")
+    default_src = os.path.join(os.getenv("RAW_DIR", "./data/raw"), "labs")
     parser.add_argument("--src", default=default_src)
     parser.add_argument("--out", default=os.getenv("PROCESSED_DIR", "./data/processed"))
     args = parser.parse_args()

@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.constants import MEDS_PROCESSED_COLS, MEDS_DATE_COLS, MEDS_TABLE_FILE, MEDS_CORPUS_FILE, MEDS_COL_MAP
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ def main(src: str, out: str):
         except Exception as e:
             logger.error(f"Failed to read {fp}: {e}")
             continue
+
         df = normalize_meds_df(raw_df)
         df["__source_file"] = os.path.relpath(fp)
         tables.append(df)
@@ -102,7 +103,7 @@ def main(src: str, out: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    default_src = os.path.join(os.getenv("DATA_DIR", "./data"), "medications")
+    default_src = os.path.join(os.getenv("RAW_DIR", "./data"), "medications")
     parser.add_argument("--src", default=default_src)
     parser.add_argument("--out", default=os.getenv("PROCESSED_DIR", "./data/processed"))
     args = parser.parse_args()
