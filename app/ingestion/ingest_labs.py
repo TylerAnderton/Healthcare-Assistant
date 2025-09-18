@@ -4,6 +4,7 @@ import glob
 from typing import List, Dict, Optional
 import pandas as pd
 from datetime import datetime, UTC
+import logging
 
 import fitz  # PyMuPDF
 from dotenv import load_dotenv
@@ -13,7 +14,9 @@ from app.ingestion.utils_pdf import extract_pdf_pages
 from app.ingestion.vendors import labcorp as v_labcorp
 from app.ingestion.vendors import letsgetchecked as v_lgc
 from app.ingestion.vendors import ways2well as v_w2w
+from app.constants import LABS_PROCESSED_COLS
 
+logger = logging.getLogger(__name__)
 
 def ensure_dirs(base_out: str):
     os.makedirs(os.path.join(base_out, "tables"), exist_ok=True)
@@ -23,13 +26,13 @@ def ensure_dirs(base_out: str):
 def detect_vendor(filepath: str, first_page_text: str) -> Optional[str]:
     name = os.path.basename(filepath).lower()
     if name.startswith("labcorp_") or "date collected" in first_page_text.lower(): # "date collected" might not be the best to use
-        print(f"Detected LabCorp: {filepath}")
+        logger.info(f"Detected LabCorp: {filepath}")
         return "labcorp"
     if "letsgetchecked" in name or "lets_get_checked" in name:
-        print(f"Detected LetsGetChecked: {filepath}")
+        logger.info(f"Detected LetsGetChecked: {filepath}")
         return "letsgetchecked"
     if "ways2well" in name or "ways2well" in first_page_text.lower():
-        print(f"Detected Ways2Well: {filepath}")
+        logger.info(f"Detected Ways2Well: {filepath}")
         return "ways2well"
     return None
 
@@ -43,7 +46,7 @@ def main(src: str, out: str):
         try:
             pages = extract_pdf_pages(fp)
         except Exception as e:
-            print(f"Failed to read {fp}: {e}")
+            logger.error(f"Failed to read {fp}: {e}")
             continue
         for p in pages:
             corpus_rows.append({
@@ -76,44 +79,32 @@ def main(src: str, out: str):
                     r["source_type"] = "labs"
                 structured_rows.extend(vendor_rows)
         except Exception as e:
-            print(f"Failed to parse structured rows for {fp}: {e}")
+            logger.error(f"Failed to parse structured rows for {fp}: {e}")
 
     # Write corpus
     if corpus_rows:
         df = pd.DataFrame(corpus_rows)
         df.to_parquet(os.path.join(out, "corpus", "labs_corpus.parquet"))
-        print(f"Wrote corpus: {len(df)} rows")
+        logger.info(f"Wrote corpus: {len(df)} rows")
     else:
-        print("No lab PDFs found or text extracted.")
+        logger.warning("No lab PDFs found or text extracted.")
 
     # Write structured table
     if structured_rows:
         tdf = pd.DataFrame(structured_rows)
         # Ensure columns exist
-        for col in [
-            "analyte",
-            "value",
-            "unit",
-            "ref_low",
-            "ref_high",
-            "date",
-            "source",
-            "page",
-            "source_type",
-            "vendor",
-            "flag",
-        ]:
+        for col in LABS_PROCESSED_COLS:
             if col not in tdf.columns:
                 tdf[col] = None
         tdf.to_parquet(os.path.join(out, "tables", "labs.parquet"))
-        print(f"Wrote labs table: {len(tdf)} rows")
+        logger.info(f"Wrote labs table: {len(tdf)} rows")
     else:
-        print("No structured labs parsed (non-supported vendors or parsing failed).")
+        logger.warning("No structured labs parsed (non-supported vendors or parsing failed).")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    default_src = os.path.join(os.getenv("DATA_DIR", "./data/raw"), "labs")
+    default_src = os.path.join(os.getenv("RAW_DIR", "./data/raw"), "labs")
     parser.add_argument("--src", default=default_src)
     parser.add_argument("--out", default=os.getenv("PROCESSED_DIR", "./data/processed"))
     args = parser.parse_args()

@@ -1,6 +1,17 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,  # or DEBUG
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+
+logger = logging.getLogger(__name__)
+logger.info("Logger initialized")
 
 load_dotenv()
 

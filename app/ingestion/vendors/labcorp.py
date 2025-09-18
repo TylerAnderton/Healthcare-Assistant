@@ -30,11 +30,6 @@ def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
 
     for pi, page in enumerate(doc):
         lines = page_lines_text(page)
-        # if looks_like_accessibility_boxes(lines) and HAVE_OCR:
-        if HAVE_OCR:
-            olines = page_lines_ocr(page)
-            if olines:
-                lines = olines
 
         # Stop when the next section header is encountered. Join lines because tokens may be split.
         joined = "\n".join(lines)

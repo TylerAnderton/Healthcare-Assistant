@@ -2,14 +2,7 @@ import re
 from typing import List, Dict, Optional, Tuple
 import fitz  # PyMuPDF
 
-# Optional OCR fallback
-try:
-    import pytesseract  # type: ignore
-    from PIL import Image  # type: ignore
-    HAVE_OCR = True
-except Exception:
-    HAVE_OCR = False
-
+HAVE_OCR = False # TODO: remove all OCR references
 
 # Common date patterns
 DATE_PATTERNS = [

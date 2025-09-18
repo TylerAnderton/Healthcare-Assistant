@@ -1,12 +1,8 @@
 import re
 from typing import List, Dict, Optional, Tuple
 import fitz  # PyMuPDF
-try:
-    import pytesseract  # optional OCR
-    from PIL import Image
-    HAVE_OCR = True
-except Exception:
-    HAVE_OCR = False
+
+HAVE_OCR = False # TODO: remove all OCR references
 
 DATE_PATTERNS = [
     re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d{2})\b"),  # MM/DD/YYYY
@@ -123,8 +119,8 @@ def _parse_value_and_flag(text: str) -> Tuple[Optional[float], Optional[str]]:
 
 def extract_rows(doc: fitz.Document, filepath: str) -> List[Dict]:
     date = extract_report_date(doc, filepath)
-    print(f"Extracting rows from {filepath}")
-    print(f"Date: {date}")
+    # print(f"Extracting rows from {filepath}")
+    # print(f"Date: {date}")
     out: List[Dict] = []
 
     def _page_lines_text(p: fitz.Page) -> List[str]:
