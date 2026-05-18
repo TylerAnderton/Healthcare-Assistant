@@ -65,7 +65,7 @@ def load_meds_timeline(
         lines.append(f"- Drug: {med_name}")
         for e in grouped[med_name]:
             dose_s = f"{e['dose']} {e['dose_unit']}".strip()
-            freq_s = f"{e['freq']} {e['freq_unit']}".strip()
+            freq_s = f"{e['frequency']} {e['frequency_unit']}".strip()
             details = "; ".join([
                 s for s in [
                     dose_s if dose_s.strip() else "",
