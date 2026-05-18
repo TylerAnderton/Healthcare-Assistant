@@ -3,6 +3,9 @@ import streamlit as st
 from dotenv import load_dotenv
 import logging
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 logging.basicConfig(
     level=logging.INFO,  # or DEBUG
@@ -28,7 +31,7 @@ st.caption("Ask questions about your labs, medications, and WHOOP data. Sources 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-from chains.chat import answer_question, has_vectorstore
+from app.chains.chat import answer_question, has_vectorstore
 
 if not has_vectorstore():
     st.warning("No vector index found. Please run ingestion and indexing steps (see README). The chatbot will still respond, but without document retrieval.")
