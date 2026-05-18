@@ -97,12 +97,12 @@ def sleeps(
     tp = table_path or SLEEPS_PATH
     df = _load_df(tp)
     if df is None:
-        return []
+        return pd.DataFrame()
 
     dff = df[df[WHOOP_SLEEPS_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
-        return []
+        return pd.DataFrame()
 
     dff = dff.sort_values(WHOOP_SLEEPS_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
@@ -126,12 +126,12 @@ def recovery(
     tp = table_path or RECOVERY_PATH
     df = _load_df(tp)
     if df is None:
-        return []
+        return pd.DataFrame()
 
     dff = df[df[WHOOP_RECOVERY_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
-        return []
+        return pd.DataFrame()
 
     dff = dff.sort_values(WHOOP_RECOVERY_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
@@ -154,12 +154,12 @@ def workouts(
     tp = table_path or WORKOUTS_PATH
     df = _load_df(tp)
     if df is None:
-        return []
+        return pd.DataFrame()
 
     dff = df[df[WHOOP_WORKOUTS_PROCESSED_COLS[0]].astype(str) != ""].copy()
     dff = _filter_date_range(dff, start, end)
     if dff.empty:
-        return []
+        return pd.DataFrame()
 
     dff = dff.sort_values(WHOOP_WORKOUTS_PROCESSED_COLS[0], ascending=ascending)
     if limit is not None and limit > 0:
