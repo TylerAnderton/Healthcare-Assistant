@@ -41,3 +41,16 @@ Copy `.env.example` → `.env`. Key vars: `OLLAMA_MODEL`, `EMBEDDING_MODEL`, `MA
 **Labs:** analyte, value, unit, ref_low, ref_high, date, source, page, source_type, vendor, flag
 **Meds:** name, dose, dose_unit, frequency, frequency_unit, date_start, date_updated, date_stop, current
 **WHOOP:** date, sleep_score, recovery_score, strain, rhr_bpm, hrv_ms, activity, calories, etc.
+
+## Testing Conventions
+
+### TDD Workflow
+- Always write failing tests BEFORE implementation
+- Use AAA pattern: Arrange-Act-Assert
+- One assertion per test when possible
+- Test names describe behavior: "should_return_empty_when_no_items"
+
+### Test-First Rules
+- When I ask for a feature, write tests first
+- Tests should FAIL initially (no implementation exists)
+- Only after tests are written, implement minimal code to pass
