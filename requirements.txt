@@ -1,6 +1,7 @@
 chromadb
 ipykernel
 jupyterlab
+jupyterlab-vim
 langchain
 langchain-chroma
 langchain-core
