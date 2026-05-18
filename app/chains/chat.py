@@ -15,7 +15,7 @@ from langchain_ollama import ChatOllama
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from app.tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
-from app.tools.tool_calls import answer_with_tools
+from app.tools.react_agent import answer_with_react_agent
 from .prompts import *
 
 VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/processed/vectorstore")
@@ -311,8 +311,8 @@ def answer_question(question: str, history: Optional[List[dict]] = None) -> Tupl
     llm = _get_llm()
 
     if ENABLE_TOOL_CALLING:
-        # Run a lightweight tool-calling loop using structured tools
-        answer = answer_with_tools(llm, dynamic_prompt)
+        # Run a ReAct agent with tool calling and LangSmith tracing
+        answer = answer_with_react_agent(llm, dynamic_prompt)
     else:
         chain = dynamic_prompt | llm | StrOutputParser()
         answer = chain.invoke({})
