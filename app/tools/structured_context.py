@@ -11,6 +11,8 @@ from collections import defaultdict
 from datetime import datetime, UTC, timedelta
 import logging
 
+from langsmith import traceable
+
 from .whoop_tool import recent as whoop_recent
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ def _safe_str(x) -> str:
         return ""
 
 
+@traceable
 def load_meds_timeline(
     max_meds: int = 12, # TODO: Set max meds and events in env var
     max_events: int = 24,
@@ -78,6 +81,7 @@ def load_meds_timeline(
     return "\n".join(lines)
 
 
+@traceable
 def load_labs_panel(
     max_rows: int = 40,
     processed_dir: Optional[str] = None,
@@ -176,6 +180,7 @@ def _fmt_minutes_to_hm(min):
         return ""
 
 
+@traceable
 def load_whoop_recent(
     days: int = 7,
 ) -> str:

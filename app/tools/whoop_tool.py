@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, UTC
 import pandas as pd
 from typing import Dict, List, Optional
 
+from langsmith import traceable
+
 from app.constants import (
     WHOOP_TABLE_FILES,
     WHOOP_SLEEPS_RAW_COLS,
@@ -83,6 +85,7 @@ RECOVERY_PATH = os.path.join(BASE, WHOOP_TABLE_FILES.get("physiological_cycles",
 WORKOUTS_PATH = os.path.join(BASE, WHOOP_TABLE_FILES.get("workouts", "whoop_workouts.parquet"))
 
 
+@traceable
 def sleeps(
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -112,6 +115,7 @@ def sleeps(
 
 
 # Physiological cycles
+@traceable
 def recovery(
     start: Optional[str] = None,
     end: Optional[str] = None,
@@ -140,6 +144,7 @@ def recovery(
     return dff
 
 
+@traceable
 def workouts(
     start: Optional[str] = None,
     end: Optional[str] = None,

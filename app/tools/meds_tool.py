@@ -4,6 +4,8 @@ import pandas as pd
 import logging
 import difflib
 
+from langsmith import traceable
+
 from app.constants import MEDS_DATE_COLS, MEDS_TABLE_FILE, MEDS_PROCESSED_COLS
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,7 @@ def _best_name_match(names: List[str], query: str) -> Tuple[str, float]:
     return scores[0]
 
 # ------ External Tools ------
+@traceable
 def list_current(date: Optional[str|None] = None) -> List[Dict[str, Any]]:
     """
     Input:
@@ -91,6 +94,7 @@ def list_current(date: Optional[str|None] = None) -> List[Dict[str, Any]]:
     return df_dict_list
 
 
+@traceable
 def list_medications() -> List[str]:
     """Return the unique list of medication names from the table."""
     df = _load_df()
@@ -102,6 +106,7 @@ def list_medications() -> List[str]:
     return sorted({str(x).strip() for x in df[MEDS_PROCESSED_COLS[0]].dropna().unique() if str(x).strip()})
 
 
+@traceable
 def get_medication_history(medication: str, fuzzy: bool = True, threshold: float = 0.6) -> List[Dict]:
     """Return the chronological dosing history for a medication.
 
@@ -161,6 +166,7 @@ def get_medication_history(medication: str, fuzzy: bool = True, threshold: float
     return events
 
 
+@traceable
 def dosage_on_date(medication: str, date: Optional[str] = None, fuzzy: bool = True) -> Dict:
     """Return the dose/frequency in effect for a medication on a given date.
 

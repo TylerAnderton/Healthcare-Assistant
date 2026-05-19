@@ -10,7 +10,7 @@ from langchain_core.tools import StructuredTool
 
 load_dotenv()
 
-from app.tools.react_agent import (
+from app.agents.react_agent import (
     build_react_agent,
     answer_with_react_agent,
     labs_list_analytes,

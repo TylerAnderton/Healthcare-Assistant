@@ -4,6 +4,8 @@ import math
 import pandas as pd
 import logging
 
+from langsmith import traceable
+
 TABLE_PATH = os.path.join(os.getenv("PROCESSED_DIR", "./data/processed"), "tables", "labs.parquet")
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ def _safe_float(x) -> Optional[float]:
         return None
 
 
+@traceable
 def list_analytes(prefix: Optional[str] = None, table_path: Optional[str] = None) -> List[str]:
     """
     Return a list of all unique lab analytes.
@@ -57,6 +60,7 @@ def list_analytes(prefix: Optional[str] = None, table_path: Optional[str] = None
     return names
 
 
+@traceable
 def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
     """
     Return the latest value for a lab analyte.
@@ -90,6 +94,7 @@ def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dic
     }
 
 
+@traceable
 def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, table_path: Optional[str] = None) -> List[Dict]:
     """
     Return recent history for a lab analyte.
@@ -115,6 +120,7 @@ def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, t
     return dff[cols].to_dict(orient="records")
 
 
+@traceable
 def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
     """
     Return a summary for a lab analyte (last value/date, delta, unit, ref range).

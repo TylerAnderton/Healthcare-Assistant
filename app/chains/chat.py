@@ -15,7 +15,7 @@ from langchain_ollama import ChatOllama
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from app.tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
-from app.tools.react_agent import answer_with_react_agent
+from app.agents.react_agent import answer_with_react_agent
 from .prompts import *
 
 VECTORSTORE_DIR = os.getenv("VECTORSTORE_DIR", "./data/processed/vectorstore")
