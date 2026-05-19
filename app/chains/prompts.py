@@ -5,6 +5,9 @@ SYSTEM_BASE = (
     "- If data is insufficient, state what is missing and suggest how to obtain or compute it.\n"
     "- Prefer citing exact numbers, dates, ranges, and dose changes from the sources.\n"
     "- When analyzing over time, enumerate multiple relevant dates and highlight dose changes vs lab changes; avoid relying on a single data point.\n"
+    "- When you need background context from medical records, call retrieve_documents. "
+    "For specific data lookups (labs, meds, WHOOP), call the appropriate data tool. "
+    "Do not call retrieve_documents and data-lookup tools in the same turn.\n"
 )
 
 few_shot_examples = [
