@@ -1,8 +1,13 @@
-from typing import List, Optional, Dict, Any
+import operator
 import logging
+from typing import List, Optional, Dict, Any, Annotated
 
 from langchain_core.tools import tool
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
+from typing_extensions import TypedDict
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -10,9 +15,22 @@ load_dotenv()
 from app.tools import labs_tool as LT
 from app.tools import whoop_tool as WT
 from app.tools import meds_tool as MT
-from app.tools.structured_context import load_meds_timeline
+from app.tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
+from app.agents.nodes.retriever import _retriever_node
+from app.chains.prompts import SYSTEM_BASE
+from app.constants import AGENT_MAX_ITERATIONS
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# State
+# ============================================================================
+
+class AgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    sources: Annotated[list[str], operator.add]
+
 
 # ============================================================================
 # Labs Tools
@@ -39,8 +57,7 @@ def labs_history(analyte: str, limit: int = 10, ascending: bool = True) -> List[
 @tool
 def labs_summary(analyte: str) -> Dict[str, Any]:
     """Get aggregate statistics for a lab analyte: latest value/date, min/max/mean, reference range, flags."""
-    s = LT.summary(analyte)
-    return s or {}
+    return LT.summary(analyte) or {}
 
 
 @tool
@@ -141,41 +158,140 @@ def whoop_workouts_on_date(date: str) -> List[Dict[str, Any]]:
 
 
 # ============================================================================
-# ReAct Agent Builder
+# Structured Snapshot Tools
+# ============================================================================
+
+@tool
+def labs_panel() -> str:
+    """Get the most recent full lab panel as a compact text snapshot with all analytes, values, and flags."""
+    return load_labs_panel() or ""
+
+
+@tool
+def whoop_recent(days: int = 7) -> str:
+    """Get a compact WHOOP snapshot (sleeps + recovery + workouts) for the last N days."""
+    return load_whoop_recent(days=days) or ""
+
+
+# ============================================================================
+# Retrieval Tool (handled by retriever node, NOT ToolNode)
+# ============================================================================
+
+@tool
+def retrieve_documents(query: str, source_type: Optional[str] = None) -> str:
+    """Retrieve background documents from the medical record vector store.
+
+    source_type filters to a specific domain: 'labs', 'meds', 'whoop', or None for general search.
+    Returns prose snippets with source citations; use for narrative context, not exact numeric values.
+    Do not mix this call with other tool calls in the same turn."""
+    return ""  # Body unused — retriever node intercepts this tool_call via graph routing
+
+
+# ============================================================================
+# Tool Lists
+# ============================================================================
+
+NODE_TOOLS = [
+    labs_list_analytes,
+    labs_latest_value,
+    labs_history,
+    labs_summary,
+    labs_value_on_date,
+    meds_timeline,
+    meds_history,
+    meds_dosage_on_date,
+    meds_list_medications,
+    meds_list_current,
+    whoop_sleeps_on_date,
+    whoop_recovery_metrics_on_date,
+    whoop_workouts_on_date,
+    labs_panel,
+    whoop_recent,
+]  # 15 tools — handled by ToolNode
+
+ALL_TOOLS = NODE_TOOLS + [retrieve_documents]  # 16 — all bound to LLM via bind_tools
+
+
+# ============================================================================
+# Nodes and Routing
+# ============================================================================
+
+def _agent_node(state: AgentState, llm_with_tools) -> dict:
+    response = llm_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+
+def _route_after_agent(state: AgentState) -> str:
+    last = state["messages"][-1]
+    tool_calls = getattr(last, "tool_calls", None)
+    if not tool_calls:
+        return END
+    names = {tc["name"] for tc in tool_calls}
+    if "retrieve_documents" in names:
+        return "retriever"
+    return "tools"
+
+
+def _history_to_messages(history: list) -> list:
+    role_map = {"user": HumanMessage, "assistant": AIMessage}
+    msgs = []
+    for m in history:
+        cls = role_map.get(m.get("role", ""))
+        content = m.get("content", "")
+        if cls and content:
+            msgs.append(cls(content=content))
+    return msgs
+
+
+# ============================================================================
+# Graph
 # ============================================================================
 
 def build_react_agent(llm):
-    """Create a ReAct agent with all available tools."""
-    tools = [
-        labs_list_analytes,
-        labs_latest_value,
-        labs_history,
-        labs_summary,
-        labs_value_on_date,
-        meds_timeline,
-        meds_history,
-        meds_dosage_on_date,
-        meds_list_medications,
-        meds_list_current,
-        whoop_sleeps_on_date,
-        whoop_recovery_metrics_on_date,
-        whoop_workouts_on_date,
-    ]
-    return create_react_agent(llm, tools=tools)
+    """Compile the ReAct agent graph with agent, tools, and retriever nodes."""
+    llm_with_tools = llm.bind_tools(ALL_TOOLS)
+    graph = StateGraph(AgentState)
+    graph.add_node("agent", lambda s: _agent_node(s, llm_with_tools))
+    graph.add_node("tools", ToolNode(NODE_TOOLS))
+    graph.add_node("retriever", _retriever_node)
+    graph.add_edge(START, "agent")
+    graph.add_conditional_edges(
+        "agent",
+        _route_after_agent,
+        {"tools": "tools", "retriever": "retriever", END: END},
+    )
+    graph.add_edge("tools", "agent")
+    graph.add_edge("retriever", "agent")
+    return graph.compile()
 
 
-def answer_with_react_agent(llm, prompt) -> str:
-    """Answer a question using a ReAct agent with tool calling."""
-    agent = build_react_agent(llm)
-    messages = prompt.format_messages()
-
+def answer_with_react_agent(llm, question: str, history: list) -> tuple:
+    """Answer a question using the ReAct agent. Returns (answer: str, sources: list[str])."""
     try:
-        result = agent.invoke({"messages": messages})
-        # Extract the final text response from the agent output
-        final_message = result.get("messages", [])[-1] if result.get("messages") else None
-        if final_message and hasattr(final_message, "content"):
-            return final_message.content if isinstance(final_message.content, str) else str(final_message.content)
-        return "Unable to generate a response."
-    except Exception as e:
-        logger.exception("Error in ReAct agent: %s", e)
-        return f"An error occurred while processing your question: {e}"
+        from langgraph.errors import GraphRecursionError
+    except ImportError:
+        GraphRecursionError = RecursionError  # type: ignore
+
+    agent = build_react_agent(llm)
+    initial = [
+        SystemMessage(content=SYSTEM_BASE),
+        *_history_to_messages(history),
+        HumanMessage(content=question),
+    ]
+    try:
+        result = agent.invoke(
+            {"messages": initial, "sources": []},
+            config={"recursion_limit": AGENT_MAX_ITERATIONS},
+        )
+    except GraphRecursionError:
+        logger.warning(
+            "Agent exceeded recursion limit %d on question: %s",
+            AGENT_MAX_ITERATIONS,
+            question,
+        )
+        return (
+            "I wasn't able to fully answer within the allowed reasoning steps. Please try rephrasing or asking a more specific question.",
+            [],
+        )
+    answer = result["messages"][-1].content
+    return answer, result.get("sources", [])
