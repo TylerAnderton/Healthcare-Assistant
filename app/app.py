@@ -1,4 +1,8 @@
 import os
+import warnings
+
+warnings.filterwarnings("ignore", message="Accessing `__path__`", module="transformers")
+
 import streamlit as st
 from dotenv import load_dotenv
 import logging
