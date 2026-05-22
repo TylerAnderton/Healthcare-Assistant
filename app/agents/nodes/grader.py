@@ -22,9 +22,8 @@ def build_grader_node(llm) -> Callable[[dict], dict]:
     grader_llm = llm.with_structured_output(GraderOutput)
 
     def grader_node(state: dict) -> dict:
-        human_msgs = [m for m in state["messages"] if isinstance(m, HumanMessage)]
+        query = state.get("query", "")
         ai_msgs = [m for m in state["messages"] if isinstance(m, AIMessage)]
-        query = human_msgs[-1].content if human_msgs else ""
         answer = ai_msgs[-1].content if ai_msgs else ""
 
         messages = [

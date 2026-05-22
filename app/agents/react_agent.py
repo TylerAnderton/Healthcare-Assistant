@@ -2,11 +2,11 @@ import operator
 import logging
 from typing import List, Optional, Dict, Any, Annotated
 
+from langchain_core.documents import Document
 from langchain_core.tools import tool
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
 from typing_extensions import TypedDict
 
 from dotenv import load_dotenv
@@ -32,9 +32,13 @@ logger = logging.getLogger(__name__)
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     sources: Annotated[list[str], operator.add]
+    retrieved_docs: Annotated[list[Document], operator.add]
+    tool_outputs: Annotated[list[dict], operator.add]
+    query: str
     grader_verdict: str
     grader_feedback: str
     rewrite_count: int
+    iteration_count: int
 
 
 # ============================================================================
@@ -223,10 +227,12 @@ ALL_TOOLS = NODE_TOOLS + [retrieve_documents]  # 16 — all bound to LLM via bin
 
 def _agent_node(state: AgentState, llm_with_tools) -> dict:
     response = llm_with_tools.invoke(state["messages"])
-    return {"messages": [response]}
+    return {"messages": [response], "iteration_count": state["iteration_count"] + 1}
 
 
 def _route_after_agent(state: AgentState) -> str:
+    if state.get("iteration_count", 0) >= AGENT_MAX_ITERATIONS:
+        return "grader"
     last = state["messages"][-1]
     tool_calls = getattr(last, "tool_calls", None)
     if not tool_calls:
@@ -235,6 +241,21 @@ def _route_after_agent(state: AgentState) -> str:
     if "retrieve_documents" in names:
         return "retriever"
     return "tools"
+
+
+def _build_tools_node(tools_by_name: dict):
+    def _tools_node(state: AgentState) -> dict:
+        last = state["messages"][-1]
+        tool_calls = getattr(last, "tool_calls", [])
+        messages = []
+        tool_outputs = []
+        for tc in tool_calls:
+            tool = tools_by_name[tc["name"]]
+            result = tool.invoke(tc["args"])
+            messages.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+            tool_outputs.append({"name": tc["name"], "args": tc["args"], "output": result})
+        return {"messages": messages, "tool_outputs": tool_outputs}
+    return _tools_node
 
 
 def _route_after_grader(state: AgentState) -> str:
@@ -263,9 +284,10 @@ def _history_to_messages(history: list) -> list:
 def build_react_agent(llm):
     """Compile the ReAct agent graph with agent, tools, retriever, grader, and rewrite nodes."""
     llm_with_tools = llm.bind_tools(ALL_TOOLS)
+    tools_by_name = {t.name: t for t in NODE_TOOLS}
     graph = StateGraph(AgentState)
     graph.add_node("agent", lambda s: _agent_node(s, llm_with_tools))
-    graph.add_node("tools", ToolNode(NODE_TOOLS))
+    graph.add_node("tools", _build_tools_node(tools_by_name))
     graph.add_node("retriever", _retriever_node)
     graph.add_node("grader", build_grader_node(llm))
     graph.add_node("rewrite", build_rewrite_node(llm))
@@ -304,11 +326,15 @@ def answer_with_react_agent(llm, question: str, history: list) -> tuple:
             {
                 "messages": initial,
                 "sources": [],
+                "retrieved_docs": [],
+                "tool_outputs": [],
+                "query": question,
                 "grader_verdict": "",
                 "grader_feedback": "",
                 "rewrite_count": 0,
+                "iteration_count": 0,
             },
-            config={"recursion_limit": AGENT_MAX_ITERATIONS},
+            config={"recursion_limit": AGENT_MAX_ITERATIONS * 3},
         )
     except GraphRecursionError:
         logger.warning(

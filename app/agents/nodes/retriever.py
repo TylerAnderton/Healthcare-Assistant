@@ -14,13 +14,15 @@ def _retriever_node(state: dict) -> dict:
 
     messages = []
     sources: list = []
+    all_docs: list = []
     for tc in retrieval_calls:
         args = tc["args"]
         query = args.get("query", "")
         source_type = args.get("source_type")
         docs = _retrieve(query=query, source_type=source_type)
+        all_docs.extend(docs)
         text = _format_docs_for_tool(docs)
         sources.extend(_extract_sources(docs))
         messages.append(ToolMessage(content=text, tool_call_id=tc["id"]))
 
-    return {"messages": messages, "sources": sources}
+    return {"messages": messages, "sources": sources, "retrieved_docs": all_docs}

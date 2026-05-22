@@ -30,6 +30,7 @@ from app.agents.react_agent import (
     answer_with_react_agent,
     AgentState,
     _route_after_agent,
+    _agent_node,
     _history_to_messages,
     NODE_TOOLS,
     ALL_TOOLS,
@@ -54,6 +55,14 @@ from app.agents.react_agent import (
 from app.agents.nodes.retriever import _retriever_node
 from app.tools.retrieval_tool import has_vectorstore
 from app.constants import AGENT_MAX_ITERATIONS
+
+# Protected import for custom tools node (doesn't exist until implementation)
+try:
+    from app.agents.react_agent import _build_tools_node
+    _BUILD_TOOLS_NODE_AVAILABLE = True
+except ImportError:
+    _build_tools_node = None  # type: ignore
+    _BUILD_TOOLS_NODE_AVAILABLE = False
 
 # New imports for grader/rewrite — protected so existing tests survive the red phase
 try:
@@ -432,7 +441,7 @@ class TestAnswerWithReactAgent:
         # config is passed as a keyword argument
         kwargs = call_args[1] if call_args[1] else call_args.kwargs
         assert "config" in kwargs
-        assert kwargs["config"]["recursion_limit"] == AGENT_MAX_ITERATIONS
+        assert kwargs["config"]["recursion_limit"] == AGENT_MAX_ITERATIONS * 3
 
     def test_graceful_fallback_on_recursion_error(self, monkeypatch):
         mock_agent = MagicMock()
@@ -561,13 +570,14 @@ class TestRouteAfterGrader:
 
 @pytest.mark.skipif(not _GRADER_AVAILABLE, reason="grader not yet implemented")
 class TestGraderNode:
-    def _make_state(self, messages: list) -> dict:
+    def _make_state(self, messages: list, query: str = "") -> dict:
         return {
             "messages": messages,
             "sources": [],
             "grader_verdict": "",
             "grader_feedback": "",
             "rewrite_count": 0,
+            "query": query,
         }
 
     def _mock_llm(self, verdict: str, reason: str = "ok"):
@@ -611,20 +621,22 @@ class TestGraderNode:
         result = grader(state)
         assert result["grader_verdict"] == "fail"
 
-    def test_uses_last_human_message_not_first(self):
+    def test_uses_query_field_from_state(self):
         mock_llm, mock_chain = self._mock_llm("pass")
         grader = build_grader_node(mock_llm)
-        state = self._make_state([
-            HumanMessage(content="FIRST QUESTION"),
-            AIMessage(content="first answer"),
-            HumanMessage(content="LAST QUESTION"),
-            AIMessage(content="last answer"),
-        ])
+        state = self._make_state(
+            messages=[
+                HumanMessage(content="FIRST QUESTION"),
+                AIMessage(content="first answer"),
+                AIMessage(content="last answer"),
+            ],
+            query="THE CANONICAL QUERY",
+        )
         grader(state)
         invoke_args = mock_chain.invoke.call_args
         messages_sent = invoke_args[0][0]
         combined = " ".join(str(m.content) for m in messages_sent)
-        assert "LAST QUESTION" in combined
+        assert "THE CANONICAL QUERY" in combined
 
     def test_uses_last_ai_message_as_candidate(self):
         mock_llm, mock_chain = self._mock_llm("pass")
@@ -696,3 +708,335 @@ class TestRewriteNode:
         returned_msg = result["messages"][0]
         tool_calls = getattr(returned_msg, "tool_calls", None)
         assert not tool_calls
+
+
+# ---------------------------------------------------------------------------
+# TestAgentStateNewFields  (RED — all should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+class TestAgentStateNewFields:
+    def _hints(self):
+        import typing
+        return typing.get_type_hints(AgentState, include_extras=True)
+
+    def test_state_has_retrieved_docs_key(self):
+        assert "retrieved_docs" in self._hints()
+
+    def test_state_retrieved_docs_reducer_is_add(self):
+        hints = self._hints()
+        assert "retrieved_docs" in hints, "retrieved_docs field missing"
+        metadata = getattr(hints["retrieved_docs"], "__metadata__", None)
+        assert metadata is not None, "retrieved_docs annotation has no __metadata__"
+        assert metadata[0] is operator.add
+
+    def test_state_has_tool_outputs_key(self):
+        assert "tool_outputs" in self._hints()
+
+    def test_state_tool_outputs_reducer_is_add(self):
+        hints = self._hints()
+        assert "tool_outputs" in hints, "tool_outputs field missing"
+        metadata = getattr(hints["tool_outputs"], "__metadata__", None)
+        assert metadata is not None, "tool_outputs annotation has no __metadata__"
+        assert metadata[0] is operator.add
+
+    def test_state_has_query_key(self):
+        assert "query" in self._hints()
+
+    def test_state_has_iteration_count_key(self):
+        assert "iteration_count" in self._hints()
+
+
+# ---------------------------------------------------------------------------
+# TestRetrieverNodeNewFields  (RED — should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieverNodeNewFields:
+    def _make_retrieve_state(self, query="test query"):
+        msg = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "retrieve_documents",
+                    "args": {"query": query},
+                    "id": "call_ret",
+                    "type": "tool_call",
+                }
+            ],
+        )
+        return {"messages": [msg], "sources": []}
+
+    def test_retriever_returns_retrieved_docs_key(self, monkeypatch):
+        monkeypatch.setattr("app.agents.nodes.retriever._retrieve", lambda **kwargs: [])
+        result = _retriever_node(self._make_retrieve_state())
+        assert "retrieved_docs" in result
+
+    def test_retriever_retrieved_docs_is_list(self, monkeypatch):
+        monkeypatch.setattr("app.agents.nodes.retriever._retrieve", lambda **kwargs: [])
+        result = _retriever_node(self._make_retrieve_state())
+        assert isinstance(result["retrieved_docs"], list)
+
+    def test_retriever_retrieved_docs_contains_documents(self, monkeypatch):
+        doc = Document(page_content="content", metadata={"source": "x.pdf", "page": 1})
+        monkeypatch.setattr("app.agents.nodes.retriever._retrieve", lambda **kwargs: [doc])
+        result = _retriever_node(self._make_retrieve_state())
+        assert len(result["retrieved_docs"]) == 1
+        assert result["retrieved_docs"][0] is doc
+
+    def test_retriever_retrieved_docs_empty_when_no_docs(self, monkeypatch):
+        monkeypatch.setattr("app.agents.nodes.retriever._retrieve", lambda **kwargs: [])
+        result = _retriever_node(self._make_retrieve_state())
+        assert result["retrieved_docs"] == []
+
+
+# ---------------------------------------------------------------------------
+# TestGraderUsesQueryField  (RED — should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _GRADER_AVAILABLE, reason="grader not yet implemented")
+class TestGraderUsesQueryField:
+    def _mock_llm(self, verdict="pass", reason="ok"):
+        mock_result = MagicMock()
+        mock_result.verdict = verdict
+        mock_result.reason = reason
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = mock_result
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_chain
+        return mock_llm, mock_chain
+
+    def test_grader_uses_state_query_not_last_human_message(self):
+        """When rewrite injects a feedback HumanMessage, grader must use state['query'] not human_msgs[-1]."""
+        mock_llm, mock_chain = self._mock_llm("pass")
+        grader = build_grader_node(mock_llm)
+        state = {
+            "messages": [
+                HumanMessage(content="ORIGINAL QUESTION"),
+                AIMessage(content="first answer"),
+                HumanMessage(content="FEEDBACK INJECTION rewrite feedback text"),
+                AIMessage(content="rewritten answer"),
+            ],
+            "sources": [],
+            "grader_verdict": "",
+            "grader_feedback": "",
+            "rewrite_count": 1,
+            "query": "ORIGINAL QUESTION",
+        }
+        grader(state)
+        invoke_args = mock_chain.invoke.call_args
+        messages_sent = invoke_args[0][0]
+        combined = " ".join(str(m.content) for m in messages_sent)
+        assert "ORIGINAL QUESTION" in combined
+        assert "FEEDBACK INJECTION" not in combined
+
+    def test_grader_uses_query_field_when_present(self):
+        mock_llm, mock_chain = self._mock_llm("pass")
+        grader = build_grader_node(mock_llm)
+        state = {
+            "messages": [
+                HumanMessage(content="DIFFERENT MESSAGE"),
+                AIMessage(content="some answer"),
+            ],
+            "sources": [],
+            "grader_verdict": "",
+            "grader_feedback": "",
+            "rewrite_count": 0,
+            "query": "THE REAL QUERY",
+        }
+        grader(state)
+        invoke_args = mock_chain.invoke.call_args
+        messages_sent = invoke_args[0][0]
+        combined = " ".join(str(m.content) for m in messages_sent)
+        assert "THE REAL QUERY" in combined
+
+
+# ---------------------------------------------------------------------------
+# TestAgentNodeIterationCount  (RED — should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+class TestAgentNodeIterationCount:
+    def test_agent_node_increments_iteration_count(self):
+        mock_llm_with_tools = MagicMock()
+        mock_llm_with_tools.invoke.return_value = AIMessage(content="response")
+        state = {
+            "messages": [HumanMessage(content="q")],
+            "sources": [],
+            "retrieved_docs": [],
+            "tool_outputs": [],
+            "query": "q",
+            "grader_verdict": "",
+            "grader_feedback": "",
+            "rewrite_count": 0,
+            "iteration_count": 2,
+        }
+        result = _agent_node(state, mock_llm_with_tools)
+        assert "iteration_count" in result
+        assert result["iteration_count"] == 3
+
+    def test_agent_node_increments_from_zero(self):
+        mock_llm_with_tools = MagicMock()
+        mock_llm_with_tools.invoke.return_value = AIMessage(content="response")
+        state = {
+            "messages": [HumanMessage(content="q")],
+            "sources": [],
+            "retrieved_docs": [],
+            "tool_outputs": [],
+            "query": "q",
+            "grader_verdict": "",
+            "grader_feedback": "",
+            "rewrite_count": 0,
+            "iteration_count": 0,
+        }
+        result = _agent_node(state, mock_llm_with_tools)
+        assert result["iteration_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TestRouteAfterAgentIterationCap  (RED — should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+class TestRouteAfterAgentIterationCap:
+    def _state_with_tool_call(self, iteration_count: int) -> dict:
+        msg = AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "labs_latest_value", "args": {}, "id": "x", "type": "tool_call"}
+            ],
+        )
+        return {
+            "messages": [msg],
+            "sources": [],
+            "retrieved_docs": [],
+            "tool_outputs": [],
+            "query": "q",
+            "grader_verdict": "",
+            "grader_feedback": "",
+            "rewrite_count": 0,
+            "iteration_count": iteration_count,
+        }
+
+    def test_routes_to_grader_when_iteration_count_at_limit(self):
+        state = self._state_with_tool_call(AGENT_MAX_ITERATIONS)
+        assert _route_after_agent(state) == "grader"
+
+    def test_routes_to_grader_when_iteration_count_exceeds_limit(self):
+        state = self._state_with_tool_call(AGENT_MAX_ITERATIONS + 5)
+        assert _route_after_agent(state) == "grader"
+
+    def test_routes_normally_when_below_limit(self):
+        state = self._state_with_tool_call(AGENT_MAX_ITERATIONS - 1)
+        assert _route_after_agent(state) == "tools"
+
+
+# ---------------------------------------------------------------------------
+# TestCustomToolsNode  (RED — should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _BUILD_TOOLS_NODE_AVAILABLE, reason="_build_tools_node not yet implemented")
+class TestCustomToolsNode:
+    def test_tools_node_returns_tool_outputs(self):
+        mock_tool = MagicMock()
+        mock_tool.name = "fake_tool"
+        mock_tool.invoke.return_value = {"value": 42}
+        tools_by_name = {"fake_tool": mock_tool}
+        node = _build_tools_node(tools_by_name)
+        msg = AIMessage(
+            content="",
+            tool_calls=[{"name": "fake_tool", "args": {}, "id": "tc1", "type": "tool_call"}],
+        )
+        state = {"messages": [msg]}
+        result = node(state)
+        assert "tool_outputs" in result
+        assert isinstance(result["tool_outputs"], list)
+        assert len(result["tool_outputs"]) == 1
+
+    def test_tool_output_contains_name_args_output(self):
+        mock_tool = MagicMock()
+        mock_tool.name = "fake_tool"
+        mock_tool.invoke.return_value = {"value": 42}
+        tools_by_name = {"fake_tool": mock_tool}
+        node = _build_tools_node(tools_by_name)
+        msg = AIMessage(
+            content="",
+            tool_calls=[{"name": "fake_tool", "args": {"x": 1}, "id": "tc1", "type": "tool_call"}],
+        )
+        result = node({"messages": [msg]})
+        entry = result["tool_outputs"][0]
+        assert entry["name"] == "fake_tool"
+        assert entry["args"] == {"x": 1}
+        assert entry["output"] == {"value": 42}
+
+    def test_tools_node_also_returns_tool_messages(self):
+        mock_tool = MagicMock()
+        mock_tool.name = "fake_tool"
+        mock_tool.invoke.return_value = "result string"
+        tools_by_name = {"fake_tool": mock_tool}
+        node = _build_tools_node(tools_by_name)
+        msg = AIMessage(
+            content="",
+            tool_calls=[{"name": "fake_tool", "args": {}, "id": "tc1", "type": "tool_call"}],
+        )
+        result = node({"messages": [msg]})
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], ToolMessage)
+
+
+# ---------------------------------------------------------------------------
+# TestAnswerWithReactAgentNewStateFields  (RED — should fail until implementation)
+# ---------------------------------------------------------------------------
+
+
+class TestAnswerWithReactAgentNewStateFields:
+    def _invoke_and_get_state(self, monkeypatch, question="test q"):
+        mock_agent = MagicMock()
+        mock_agent.invoke.return_value = {
+            "messages": [AIMessage(content="answer")],
+            "sources": [],
+            "retrieved_docs": [],
+            "tool_outputs": [],
+        }
+        monkeypatch.setattr("app.agents.react_agent.build_react_agent", lambda llm: mock_agent)
+        llm = MagicMock()
+        answer_with_react_agent(llm, question, [])
+        call_args = mock_agent.invoke.call_args
+        return call_args[0][0] if call_args[0] else call_args.args[0]
+
+    def test_initial_state_has_query_field(self, monkeypatch):
+        state = self._invoke_and_get_state(monkeypatch, question="my specific question")
+        assert "query" in state
+        assert state["query"] == "my specific question"
+
+    def test_initial_state_has_retrieved_docs_field(self, monkeypatch):
+        state = self._invoke_and_get_state(monkeypatch)
+        assert "retrieved_docs" in state
+        assert state["retrieved_docs"] == []
+
+    def test_initial_state_has_tool_outputs_field(self, monkeypatch):
+        state = self._invoke_and_get_state(monkeypatch)
+        assert "tool_outputs" in state
+        assert state["tool_outputs"] == []
+
+    def test_initial_state_has_iteration_count_field(self, monkeypatch):
+        state = self._invoke_and_get_state(monkeypatch)
+        assert "iteration_count" in state
+        assert state["iteration_count"] == 0
+
+    def test_recursion_limit_exceeds_agent_max_iterations(self, monkeypatch):
+        """Recursion limit should be a safety net above AGENT_MAX_ITERATIONS, not equal to it."""
+        mock_agent = MagicMock()
+        mock_agent.invoke.return_value = {
+            "messages": [AIMessage(content="answer")],
+            "sources": [],
+        }
+        monkeypatch.setattr("app.agents.react_agent.build_react_agent", lambda llm: mock_agent)
+        llm = MagicMock()
+        answer_with_react_agent(llm, "question", [])
+        call_args = mock_agent.invoke.call_args
+        kwargs = call_args[1] if call_args[1] else call_args.kwargs
+        assert kwargs["config"]["recursion_limit"] > AGENT_MAX_ITERATIONS
