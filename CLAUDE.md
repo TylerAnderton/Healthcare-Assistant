@@ -54,3 +54,8 @@ Copy `.env.example` → `.env`. Key vars: `OLLAMA_MODEL`, `EMBEDDING_MODEL`, `MA
 - When I ask for a feature, write tests first
 - Tests should FAIL initially (no implementation exists)
 - Only after tests are written, implement minimal code to pass
+
+## Design & Workflow
+- Always clarify design choices that seem ambiguous or contradictory. Never make assumptions or make design choices yourself. Always ask.
+- We should spend more time planning and writing design specs than implementing. Do not rush into implementation.
+- Explain your plans in full detail with context. Only after approval may you begin coding.
