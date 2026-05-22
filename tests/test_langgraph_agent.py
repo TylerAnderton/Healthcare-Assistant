@@ -10,7 +10,6 @@ import logging
 import inspect
 import pytest
 from unittest.mock import MagicMock, patch
-from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -23,7 +22,6 @@ try:
 except ImportError:
     GraphRecursionError = RecursionError
 
-load_dotenv()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 

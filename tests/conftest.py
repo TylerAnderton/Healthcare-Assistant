@@ -14,6 +14,11 @@ try:
 except Exception:
     pass
 
+# Disable LangSmith tracing for all tests — prevent local runs from creating traces
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ.pop("LANGSMITH_API_KEY", None)
+
 # Ensure PROCESSED_DIR defaults to repo's data/processed if not set
 os.environ.setdefault("PROCESSED_DIR", str(ROOT / "data/processed"))
 
