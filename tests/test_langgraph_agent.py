@@ -57,6 +57,20 @@ from app.agents.nodes.retriever import _retriever_node
 from app.tools.retrieval_tool import has_vectorstore
 from app.constants import AGENT_MAX_ITERATIONS
 
+# New imports for grader/rewrite — protected so existing tests survive the red phase
+try:
+    from app.agents.react_agent import _route_after_grader
+    from app.agents.nodes.grader import build_grader_node
+    from app.agents.nodes.rewrite import build_rewrite_node
+    from app.constants import MAX_REWRITES
+    _GRADER_AVAILABLE = True
+except ImportError:
+    _route_after_grader = None  # type: ignore
+    build_grader_node = None    # type: ignore
+    build_rewrite_node = None   # type: ignore
+    MAX_REWRITES = None         # type: ignore
+    _GRADER_AVAILABLE = False
+
 
 # ---------------------------------------------------------------------------
 # TestGraphStructure
@@ -121,11 +135,11 @@ class TestAgentState:
 
 
 class TestRouteAfterAgent:
-    def test_routes_to_END_when_no_tool_calls(self):
+    def test_routes_to_grader_when_no_tool_calls(self):
         msg = AIMessage(content="done")
         state = {"messages": [msg], "sources": []}
         result = _route_after_agent(state)
-        assert result == END
+        assert result == "grader"
 
     def test_routes_to_tools_for_standard_tool_call(self):
         msg = AIMessage(
@@ -462,3 +476,225 @@ class TestChatIntegration:
     def test_has_vectorstore_importable_from_chat(self):
         from app.chains.chat import has_vectorstore
         assert callable(has_vectorstore)
+
+
+# ---------------------------------------------------------------------------
+# TestAgentStateExpanded
+# ---------------------------------------------------------------------------
+
+
+class TestAgentStateExpanded:
+    def test_state_has_grader_verdict_key(self):
+        import typing
+        hints = typing.get_type_hints(AgentState, include_extras=True)
+        assert "grader_verdict" in hints
+
+    def test_state_has_grader_feedback_key(self):
+        import typing
+        hints = typing.get_type_hints(AgentState, include_extras=True)
+        assert "grader_feedback" in hints
+
+    def test_state_has_rewrite_count_key(self):
+        import typing
+        hints = typing.get_type_hints(AgentState, include_extras=True)
+        assert "rewrite_count" in hints
+
+
+# ---------------------------------------------------------------------------
+# TestGraphStructureExpanded
+# ---------------------------------------------------------------------------
+
+
+class TestGraphStructureExpanded:
+    def test_graph_has_grader_node(self):
+        llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+        agent = build_react_agent(llm)
+        node_keys = set(agent.get_graph().nodes.keys())
+        assert "grader" in node_keys
+
+    def test_graph_has_rewrite_node(self):
+        llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+        agent = build_react_agent(llm)
+        node_keys = set(agent.get_graph().nodes.keys())
+        assert "rewrite" in node_keys
+
+
+# ---------------------------------------------------------------------------
+# TestRouteAfterGrader
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _GRADER_AVAILABLE, reason="grader not yet implemented")
+class TestRouteAfterGrader:
+    def _make_state(self, verdict: str, rewrite_count: int) -> dict:
+        return {
+            "messages": [AIMessage(content="answer")],
+            "sources": [],
+            "grader_verdict": verdict,
+            "grader_feedback": "some feedback",
+            "rewrite_count": rewrite_count,
+        }
+
+    def test_pass_verdict_routes_to_end(self):
+        state = self._make_state("pass", 0)
+        assert _route_after_grader(state) == END
+
+    def test_fail_with_count_zero_routes_to_rewrite(self):
+        state = self._make_state("fail", 0)
+        assert _route_after_grader(state) == "rewrite"
+
+    def test_fail_with_count_one_routes_to_rewrite(self):
+        state = self._make_state("fail", 1)
+        assert _route_after_grader(state) == "rewrite"
+
+    def test_fail_at_cap_routes_to_end(self):
+        state = self._make_state("fail", MAX_REWRITES)
+        assert _route_after_grader(state) == END
+
+    def test_fail_over_cap_routes_to_end(self):
+        state = self._make_state("fail", MAX_REWRITES + 1)
+        assert _route_after_grader(state) == END
+
+
+# ---------------------------------------------------------------------------
+# TestGraderNode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _GRADER_AVAILABLE, reason="grader not yet implemented")
+class TestGraderNode:
+    def _make_state(self, messages: list) -> dict:
+        return {
+            "messages": messages,
+            "sources": [],
+            "grader_verdict": "",
+            "grader_feedback": "",
+            "rewrite_count": 0,
+        }
+
+    def _mock_llm(self, verdict: str, reason: str = "ok"):
+        mock_result = MagicMock()
+        mock_result.verdict = verdict
+        mock_result.reason = reason
+        mock_chain = MagicMock()
+        mock_chain.invoke.return_value = mock_result
+        mock_llm = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_chain
+        return mock_llm, mock_chain
+
+    def test_returns_pass_for_relevant_complete_answer(self):
+        mock_llm, _ = self._mock_llm("pass", "Relevant and complete.")
+        grader = build_grader_node(mock_llm)
+        state = self._make_state([
+            HumanMessage(content="What is my latest HRV?"),
+            AIMessage(content="Your latest HRV is 45ms as of 2024-01-15."),
+        ])
+        result = grader(state)
+        assert result["grader_verdict"] == "pass"
+
+    def test_returns_fail_with_reason_for_off_topic_answer(self):
+        mock_llm, _ = self._mock_llm("fail", "Answer does not address HRV.")
+        grader = build_grader_node(mock_llm)
+        state = self._make_state([
+            HumanMessage(content="What is my latest HRV?"),
+            AIMessage(content="The weather today is sunny."),
+        ])
+        result = grader(state)
+        assert result["grader_verdict"] == "fail"
+        assert len(result["grader_feedback"]) > 0
+
+    def test_returns_fail_for_incomplete_answer(self):
+        mock_llm, _ = self._mock_llm("fail", "Missing sleep data for the second part of the question.")
+        grader = build_grader_node(mock_llm)
+        state = self._make_state([
+            HumanMessage(content="What is my HRV and how did I sleep last night?"),
+            AIMessage(content="Your HRV is 45ms."),
+        ])
+        result = grader(state)
+        assert result["grader_verdict"] == "fail"
+
+    def test_uses_last_human_message_not_first(self):
+        mock_llm, mock_chain = self._mock_llm("pass")
+        grader = build_grader_node(mock_llm)
+        state = self._make_state([
+            HumanMessage(content="FIRST QUESTION"),
+            AIMessage(content="first answer"),
+            HumanMessage(content="LAST QUESTION"),
+            AIMessage(content="last answer"),
+        ])
+        grader(state)
+        invoke_args = mock_chain.invoke.call_args
+        messages_sent = invoke_args[0][0]
+        combined = " ".join(str(m.content) for m in messages_sent)
+        assert "LAST QUESTION" in combined
+
+    def test_uses_last_ai_message_as_candidate(self):
+        mock_llm, mock_chain = self._mock_llm("pass")
+        grader = build_grader_node(mock_llm)
+        state = self._make_state([
+            HumanMessage(content="What is my HRV?"),
+            AIMessage(content="FIRST ANSWER"),
+            HumanMessage(content="What is my HRV?"),
+            AIMessage(content="LAST ANSWER"),
+        ])
+        grader(state)
+        invoke_args = mock_chain.invoke.call_args
+        messages_sent = invoke_args[0][0]
+        combined = " ".join(str(m.content) for m in messages_sent)
+        assert "LAST ANSWER" in combined
+
+
+# ---------------------------------------------------------------------------
+# TestRewriteNode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _GRADER_AVAILABLE, reason="grader not yet implemented")
+class TestRewriteNode:
+    def _make_state(self, feedback: str = "Missing dates.", count: int = 0) -> dict:
+        return {
+            "messages": [
+                HumanMessage(content="What is my HRV?"),
+                AIMessage(content="Your HRV is high."),
+            ],
+            "sources": [],
+            "grader_verdict": "fail",
+            "grader_feedback": feedback,
+            "rewrite_count": count,
+        }
+
+    def test_returns_dict_with_messages_key(self):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="rewritten answer")
+        rewrite = build_rewrite_node(mock_llm)
+        result = rewrite(self._make_state())
+        assert "messages" in result
+        assert isinstance(result["messages"], list)
+        assert len(result["messages"]) > 0
+        assert isinstance(result["messages"][0], AIMessage)
+
+    def test_increments_rewrite_count(self):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="rewritten")
+        rewrite = build_rewrite_node(mock_llm)
+        result = rewrite(self._make_state(count=1))
+        assert result["rewrite_count"] == 2
+
+    def test_injects_grader_feedback_into_prompt(self):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="rewritten")
+        rewrite = build_rewrite_node(mock_llm)
+        rewrite(self._make_state(feedback="Answer did not cite specific HRV values."))
+        invoke_args = mock_llm.invoke.call_args
+        messages_sent = invoke_args[0][0]
+        combined = " ".join(str(m.content) for m in messages_sent)
+        assert "Answer did not cite specific HRV values." in combined
+
+    def test_returned_ai_message_has_no_tool_calls(self):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="clean rewritten answer")
+        rewrite = build_rewrite_node(mock_llm)
+        result = rewrite(self._make_state())
+        returned_msg = result["messages"][0]
+        tool_calls = getattr(returned_msg, "tool_calls", None)
+        assert not tool_calls

@@ -17,8 +17,10 @@ from app.tools import whoop_tool as WT
 from app.tools import meds_tool as MT
 from app.tools.structured_context import load_meds_timeline, load_labs_panel, load_whoop_recent
 from app.agents.nodes.retriever import _retriever_node
+from app.agents.nodes.grader import build_grader_node
+from app.agents.nodes.rewrite import build_rewrite_node
 from app.chains.prompts import SYSTEM_BASE
-from app.constants import AGENT_MAX_ITERATIONS
+from app.constants import AGENT_MAX_ITERATIONS, MAX_REWRITES
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,9 @@ logger = logging.getLogger(__name__)
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     sources: Annotated[list[str], operator.add]
+    grader_verdict: str
+    grader_feedback: str
+    rewrite_count: int
 
 
 # ============================================================================
@@ -225,11 +230,19 @@ def _route_after_agent(state: AgentState) -> str:
     last = state["messages"][-1]
     tool_calls = getattr(last, "tool_calls", None)
     if not tool_calls:
-        return END
+        return "grader"
     names = {tc["name"] for tc in tool_calls}
     if "retrieve_documents" in names:
         return "retriever"
     return "tools"
+
+
+def _route_after_grader(state: AgentState) -> str:
+    if state["grader_verdict"] == "pass":
+        return END
+    if state["rewrite_count"] >= MAX_REWRITES:
+        return END
+    return "rewrite"
 
 
 def _history_to_messages(history: list) -> list:
@@ -248,20 +261,28 @@ def _history_to_messages(history: list) -> list:
 # ============================================================================
 
 def build_react_agent(llm):
-    """Compile the ReAct agent graph with agent, tools, and retriever nodes."""
+    """Compile the ReAct agent graph with agent, tools, retriever, grader, and rewrite nodes."""
     llm_with_tools = llm.bind_tools(ALL_TOOLS)
     graph = StateGraph(AgentState)
     graph.add_node("agent", lambda s: _agent_node(s, llm_with_tools))
     graph.add_node("tools", ToolNode(NODE_TOOLS))
     graph.add_node("retriever", _retriever_node)
+    graph.add_node("grader", build_grader_node(llm))
+    graph.add_node("rewrite", build_rewrite_node(llm))
     graph.add_edge(START, "agent")
     graph.add_conditional_edges(
         "agent",
         _route_after_agent,
-        {"tools": "tools", "retriever": "retriever", END: END},
+        {"tools": "tools", "retriever": "retriever", "grader": "grader"},
     )
     graph.add_edge("tools", "agent")
     graph.add_edge("retriever", "agent")
+    graph.add_conditional_edges(
+        "grader",
+        _route_after_grader,
+        {"rewrite": "rewrite", END: END},
+    )
+    graph.add_edge("rewrite", "grader")
     return graph.compile()
 
 
@@ -280,7 +301,13 @@ def answer_with_react_agent(llm, question: str, history: list) -> tuple:
     ]
     try:
         result = agent.invoke(
-            {"messages": initial, "sources": []},
+            {
+                "messages": initial,
+                "sources": [],
+                "grader_verdict": "",
+                "grader_feedback": "",
+                "rewrite_count": 0,
+            },
             config={"recursion_limit": AGENT_MAX_ITERATIONS},
         )
     except GraphRecursionError:
