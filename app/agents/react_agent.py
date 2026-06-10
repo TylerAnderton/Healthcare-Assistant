@@ -19,6 +19,7 @@ from app.tools.structured_context import load_meds_timeline, load_labs_panel, lo
 from app.agents.nodes.retriever import _retriever_node
 from app.agents.nodes.grader import build_grader_node
 from app.agents.nodes.rewrite import build_rewrite_node
+from app.agents.nodes.validated_tools_node import ValidatedToolNode
 from app.chains.prompts import SYSTEM_BASE
 from app.constants import AGENT_MAX_ITERATIONS, MAX_REWRITES
 
@@ -34,6 +35,7 @@ class AgentState(TypedDict):
     sources: Annotated[list[str], operator.add]
     retrieved_docs: Annotated[list[Document], operator.add]
     tool_outputs: Annotated[list[dict], operator.add]
+    tool_validation_errors: Annotated[list[dict], operator.add]
     query: str
     grader_verdict: str
     grader_feedback: str
@@ -287,7 +289,7 @@ def build_react_agent(llm):
     tools_by_name = {t.name: t for t in NODE_TOOLS}
     graph = StateGraph(AgentState)
     graph.add_node("agent", lambda s: _agent_node(s, llm_with_tools))
-    graph.add_node("tools", _build_tools_node(tools_by_name))
+    graph.add_node("tools", ValidatedToolNode(tools_by_name))
     graph.add_node("retriever", _retriever_node)
     graph.add_node("grader", build_grader_node(llm))
     graph.add_node("rewrite", build_rewrite_node(llm))
@@ -328,6 +330,7 @@ def answer_with_react_agent(llm, question: str, history: list) -> tuple:
                 "sources": [],
                 "retrieved_docs": [],
                 "tool_outputs": [],
+                "tool_validation_errors": [],
                 "query": question,
                 "grader_verdict": "",
                 "grader_feedback": "",
