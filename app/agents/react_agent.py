@@ -1,5 +1,6 @@
 import operator
 import logging
+import os
 from typing import List, Optional, Dict, Any, Annotated
 
 from langchain_core.documents import Document
@@ -20,8 +21,16 @@ from app.agents.nodes.retriever import _retriever_node
 from app.agents.nodes.grader import build_grader_node
 from app.agents.nodes.rewrite import build_rewrite_node
 from app.agents.nodes.validated_tools_node import ValidatedToolNode
+from app.agents.nodes.ragas_evaluator import ragas_evaluator_node
+from app.agents.nodes.ragas_rewrite import ragas_rewrite_node
+from app.eval.judge import get_ragas_judge_llm
 from app.chains.prompts import SYSTEM_BASE
-from app.constants import AGENT_MAX_ITERATIONS, MAX_REWRITES
+from app.constants import (
+    AGENT_MAX_ITERATIONS,
+    MAX_RAGAS_REWRITES,
+    MAX_REWRITES,
+    RAGAS_FAITHFULNESS_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +50,8 @@ class AgentState(TypedDict):
     grader_feedback: str
     rewrite_count: int
     iteration_count: int
+    ragas_scores: Optional[dict]
+    ragas_rewrite_count: int
 
 
 # ============================================================================
@@ -262,10 +273,30 @@ def _build_tools_node(tools_by_name: dict):
 
 def _route_after_grader(state: AgentState) -> str:
     if state["grader_verdict"] == "pass":
-        return END
+        return "ragas_evaluator"
     if state["rewrite_count"] >= MAX_REWRITES:
-        return END
+        return "ragas_evaluator"
     return "rewrite"
+
+
+def _route_after_ragas(state: AgentState) -> str:
+    scores = state.get("ragas_scores") or {}
+    faithfulness = scores.get("faithfulness")
+    rewrite_count = state.get("ragas_rewrite_count", 0)
+
+    if faithfulness is None:
+        judge_model = os.environ.get("JUDGE_MODEL") or os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+        logger.warning(
+            "RAGAS faithfulness score is None — judge LLM may be unavailable "
+            "or metric computation failed. Routing to END without RAGAS rewrite. "
+            "Check JUDGE_MODEL=%s is running at JUDGE_BASE_URL.",
+            judge_model,
+        )
+        return END
+
+    if faithfulness < RAGAS_FAITHFULNESS_THRESHOLD and rewrite_count < MAX_RAGAS_REWRITES:
+        return "ragas_rewrite"
+    return END
 
 
 def _history_to_messages(history: list) -> list:
@@ -284,15 +315,21 @@ def _history_to_messages(history: list) -> list:
 # ============================================================================
 
 def build_react_agent(llm):
-    """Compile the ReAct agent graph with agent, tools, retriever, grader, and rewrite nodes."""
+    """Compile the ReAct agent graph: agent, tools, retriever, grader, rewrite,
+    and the RAGAS faithfulness gate (ragas_evaluator + ragas_rewrite)."""
     llm_with_tools = llm.bind_tools(ALL_TOOLS)
+    # Grader/rewrite use the non-thinking judge model: short verdicts/rewrites
+    # don't benefit from thinking, which costs minutes per call on qwen3.
+    judge_llm = get_ragas_judge_llm()
     tools_by_name = {t.name: t for t in NODE_TOOLS}
     graph = StateGraph(AgentState)
     graph.add_node("agent", lambda s: _agent_node(s, llm_with_tools))
     graph.add_node("tools", ValidatedToolNode(tools_by_name))
     graph.add_node("retriever", _retriever_node)
-    graph.add_node("grader", build_grader_node(llm))
-    graph.add_node("rewrite", build_rewrite_node(llm))
+    graph.add_node("grader", build_grader_node(judge_llm))
+    graph.add_node("rewrite", build_rewrite_node(judge_llm))
+    graph.add_node("ragas_evaluator", ragas_evaluator_node)
+    graph.add_node("ragas_rewrite", ragas_rewrite_node)
     graph.add_edge(START, "agent")
     graph.add_conditional_edges(
         "agent",
@@ -304,9 +341,15 @@ def build_react_agent(llm):
     graph.add_conditional_edges(
         "grader",
         _route_after_grader,
-        {"rewrite": "rewrite", END: END},
+        {"rewrite": "rewrite", "ragas_evaluator": "ragas_evaluator"},
     )
     graph.add_edge("rewrite", "grader")
+    graph.add_conditional_edges(
+        "ragas_evaluator",
+        _route_after_ragas,
+        {"ragas_rewrite": "ragas_rewrite", END: END},
+    )
+    graph.add_edge("ragas_rewrite", "agent")
     return graph.compile()
 
 
@@ -336,6 +379,8 @@ def answer_with_react_agent(llm, question: str, history: list) -> tuple:
                 "grader_feedback": "",
                 "rewrite_count": 0,
                 "iteration_count": 0,
+                "ragas_scores": None,
+                "ragas_rewrite_count": 0,
             },
             config={"recursion_limit": AGENT_MAX_ITERATIONS * 3},
         )
