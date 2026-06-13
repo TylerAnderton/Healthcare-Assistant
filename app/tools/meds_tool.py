@@ -27,6 +27,20 @@ def _load_df() -> Optional[pd.DataFrame]:
         return None
 
 
+def _sanitize_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    # Output schemas declare dates as Optional[str]; pandas yields Timestamp/NaT
+    # and NaN for missing cells, both of which fail Pydantic str validation.
+    clean: Dict[str, Any] = {}
+    for key, val in record.items():
+        if isinstance(val, pd.Timestamp):
+            clean[key] = None if pd.isna(val) else val.strftime("%Y-%m-%d")
+        elif val is not None and not isinstance(val, (list, dict)) and pd.isna(val):
+            clean[key] = None
+        else:
+            clean[key] = val
+    return clean
+
+
 def _norm(s: str) -> str:
     try:
         return "".join(ch for ch in str(s).lower() if ch.isalnum())
@@ -88,7 +102,9 @@ def list_current(date: Optional[str|None] = None) -> List[Dict[str, Any]]:
         MEDS_DATE_COLS[2],
         MEDS_PROCESSED_COLS[-1],
     ]
-    df_dict_list = df.drop(columns=drop_cols).to_dict(orient='records')
+    df_dict_list = [
+        _sanitize_record(r) for r in df.drop(columns=drop_cols).to_dict(orient='records')
+    ]
 
     logger.info(f'Found {len(df_dict_list)} current medications on date {date}')
     return df_dict_list

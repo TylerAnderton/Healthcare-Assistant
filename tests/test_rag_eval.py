@@ -77,7 +77,7 @@ def test_rag_eval_answer_correctness(agent, case):
     from ragas.dataset_schema import SingleTurnSample
     from ragas.llms import LangchainLLMWrapper
     from ragas.embeddings import LangchainEmbeddingsWrapper
-    from ragas.metrics import AnswerCorrectness
+    from ragas.metrics import AnswerCorrectness, AnswerSimilarity
 
     from app.eval.judge import get_ragas_judge_llm
     from app.tools.retrieval_tool import _get_embeddings
@@ -91,9 +91,18 @@ def test_rag_eval_answer_correctness(agent, case):
         response=answer,
         reference=_ground_truth(case["expected_values"]),
     )
+    # format="json": RAGAS statement-extraction prompts expect JSON; small
+    # instruct judges drift into prose otherwise (same as evaluator node).
+    judge = LangchainLLMWrapper(
+        get_ragas_judge_llm().model_copy(update={"format": "json"})
+    )
+    embeddings = LangchainEmbeddingsWrapper(_get_embeddings())
+    # answer_similarity must be set explicitly: ragas only auto-builds it
+    # inside evaluate()'s init, not when calling single_turn_ascore directly.
     metric = AnswerCorrectness(
-        llm=LangchainLLMWrapper(get_ragas_judge_llm()),
-        embeddings=LangchainEmbeddingsWrapper(_get_embeddings()),
+        llm=judge,
+        embeddings=embeddings,
+        answer_similarity=AnswerSimilarity(embeddings=embeddings),
     )
 
     # Act

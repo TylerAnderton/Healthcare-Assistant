@@ -173,12 +173,45 @@ def workouts(
     return dff
 
 
-def recent(days: int = 7) -> Dict[str, pd.DataFrame]:
-    """Return recent sleeps, recovery, and workouts within the last `days`."""
-    today = datetime.now(UTC).date()
-    start = (today - timedelta(days=max(0, days - 1))).isoformat()
+def _max_data_date():
+    """Return the most recent date present in any WHOOP table, or None."""
+    from datetime import date as _date
+
+    max_date = None
+    for path in (RECOVERY_PATH, SLEEPS_PATH, WORKOUTS_PATH):
+        df = _load_df(path)
+        if df is None or df.empty or "date" not in df.columns:
+            continue
+        dates = pd.to_datetime(df["date"], errors="coerce").dropna()
+        if dates.empty:
+            continue
+        candidate = dates.max().date()
+        if max_date is None or candidate > max_date:
+            max_date = candidate
+    return max_date if isinstance(max_date, _date) else None
+
+
+def _fetch_window(start: str) -> Dict[str, pd.DataFrame]:
     return {
         "sleeps": sleeps(start=start, ascending=True),
         "recovery": recovery(start=start, ascending=True),
         "workouts": workouts(start=start, ascending=True),
     }
+
+
+def recent(days: int = 7) -> Dict[str, pd.DataFrame]:
+    """Return recent sleeps, recovery, and workouts within the last `days`.
+
+    Anchors to wall clock first; if every table is empty (stale ingestion),
+    falls back to a window ending at the latest date present in the data so
+    "most recent" queries still surface real values.
+    """
+    today = datetime.now(UTC).date()
+    start = (today - timedelta(days=max(0, days - 1))).isoformat()
+    result = _fetch_window(start)
+    if all(df.empty for df in result.values()):
+        max_date = _max_data_date()
+        if max_date is not None:
+            fallback_start = (max_date - timedelta(days=max(0, days - 1))).isoformat()
+            result = _fetch_window(fallback_start)
+    return result
