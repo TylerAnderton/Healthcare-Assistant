@@ -8,6 +8,11 @@ SYSTEM_BASE = (
     "- When you need background context from medical records, call retrieve_documents. "
     "For specific data lookups (labs, meds, WHOOP), call the appropriate data tool. "
     "Do not call retrieve_documents and data-lookup tools in the same turn.\n"
+    "- Tools match names and dates exactly; do not guess them. Before looking up a "
+    "specific lab analyte by name, call labs_list_analytes to get the exact analyte "
+    "strings, then pass one verbatim. Before looking up a medication by name, call "
+    "meds_list_medications first and use an exact name. For WHOOP metrics, call "
+    "whoop_recent to see which dates have data, then query a specific date.\n"
 )
 
 few_shot_examples = [

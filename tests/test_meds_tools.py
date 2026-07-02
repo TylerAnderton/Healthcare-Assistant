@@ -80,6 +80,24 @@ def test_list_current_today_shape_and_optionality():
         assert any(k in first for k in ["dose", "dosage"])  # schema-flex
 
 
+def test_list_current_records_validate_against_output_schema():
+    # date_start/date_stop come out of pandas as Timestamp/NaT; the tool output
+    # schema declares them Optional[str], so the tool must serialize them.
+    from app.tools.schemas import MedsListCurrentItemOutput
+
+    res = MT.list_current()
+    for record in res:
+        MedsListCurrentItemOutput(**record)  # raises ValidationError on Timestamp/NaN
+
+
+def test_list_current_dates_are_strings_or_none():
+    res = MT.list_current()
+    for record in res:
+        for field in ("date_start", "date_stop"):
+            val = record.get(field)
+            assert val is None or isinstance(val, str), f"{field}={val!r} not str/None"
+
+
 def test_meds_timeline_basic_structure():
     block = load_meds_timeline(max_meds=10, max_events=20)
     # Should return a string, possibly empty if no data

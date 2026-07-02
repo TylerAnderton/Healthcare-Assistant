@@ -542,9 +542,9 @@ class TestRouteAfterGrader:
             "rewrite_count": rewrite_count,
         }
 
-    def test_pass_verdict_routes_to_end(self):
+    def test_pass_verdict_routes_to_ragas_evaluator(self):
         state = self._make_state("pass", 0)
-        assert _route_after_grader(state) == END
+        assert _route_after_grader(state) == "ragas_evaluator"
 
     def test_fail_with_count_zero_routes_to_rewrite(self):
         state = self._make_state("fail", 0)
@@ -554,13 +554,13 @@ class TestRouteAfterGrader:
         state = self._make_state("fail", 1)
         assert _route_after_grader(state) == "rewrite"
 
-    def test_fail_at_cap_routes_to_end(self):
+    def test_fail_at_cap_routes_to_ragas_evaluator(self):
         state = self._make_state("fail", MAX_REWRITES)
-        assert _route_after_grader(state) == END
+        assert _route_after_grader(state) == "ragas_evaluator"
 
-    def test_fail_over_cap_routes_to_end(self):
+    def test_fail_over_cap_routes_to_ragas_evaluator(self):
         state = self._make_state("fail", MAX_REWRITES + 1)
-        assert _route_after_grader(state) == END
+        assert _route_after_grader(state) == "ragas_evaluator"
 
 
 # ---------------------------------------------------------------------------
@@ -708,6 +708,25 @@ class TestRewriteNode:
         returned_msg = result["messages"][0]
         tool_calls = getattr(returned_msg, "tool_calls", None)
         assert not tool_calls
+
+
+# ---------------------------------------------------------------------------
+# TestGraderRewriteUseJudgeLLM
+# ---------------------------------------------------------------------------
+
+
+class TestGraderRewriteUseJudgeLLM:
+    def test_grader_and_rewrite_built_with_judge_llm(self):
+        """Grader/rewrite must use the non-thinking judge LLM, not the agent LLM."""
+        agent_llm = MagicMock()
+        agent_llm.bind_tools.return_value = MagicMock()
+        judge_llm = MagicMock()
+        with patch("app.agents.react_agent.get_ragas_judge_llm", return_value=judge_llm), \
+             patch("app.agents.react_agent.build_grader_node", return_value=lambda s: s) as mock_grader, \
+             patch("app.agents.react_agent.build_rewrite_node", return_value=lambda s: s) as mock_rewrite:
+            build_react_agent(agent_llm)
+        mock_grader.assert_called_once_with(judge_llm)
+        mock_rewrite.assert_called_once_with(judge_llm)
 
 
 # ============================================================================

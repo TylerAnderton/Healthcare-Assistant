@@ -195,6 +195,13 @@ def load_whoop_recent(
     except Exception:
         return ""
 
+    # whoop_recent() returns a dict of DataFrames; downstream rendering expects
+    # lists of row dicts. Convert here ("DataFrame or []" raises on truth-test).
+    data = {
+        key: (val.to_dict(orient="records") if isinstance(val, pd.DataFrame) else val)
+        for key, val in (data or {}).items()
+    }
+
     lines: List[str] = []
 
     # Sleeps

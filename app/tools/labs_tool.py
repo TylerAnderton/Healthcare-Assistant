@@ -28,6 +28,15 @@ def _load_df(table_path: Optional[str] = None) -> Optional[pd.DataFrame]:
         return None
 
 
+def _sanitize(record: Dict) -> Dict:
+    # Missing parquet values surface as float NaN (e.g. flag is NaN for most
+    # rows); Pydantic output validation rejects NaN for Optional[str] fields.
+    return {
+        k: (None if isinstance(v, float) and math.isnan(v) else v)
+        for k, v in record.items()
+    }
+
+
 def _safe_float(x) -> Optional[float]:
     try:
         if x is None:
@@ -80,7 +89,7 @@ def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dic
     dff = dff.sort_values("date", ascending=False)
     r = dff.iloc[0]
     # TODO: Use LABS_PROCESSED_COLS
-    return {
+    return _sanitize({
         "analyte": str(r.get("analyte", analyte)),
         "value": r.get("value"),
         "unit": r.get("unit"),
@@ -91,7 +100,7 @@ def latest_value(analyte: str, table_path: Optional[str] = None) -> Optional[Dic
         "flag": r.get("flag"),
         "source": r.get("source"),
         "page": r.get("page"),
-    }
+    })
 
 
 @traceable
@@ -117,7 +126,7 @@ def history(analyte: str, limit: Optional[int] = None, ascending: bool = True, t
     if limit is not None and limit > 0:
         dff = dff.head(limit) if ascending else dff.tail(limit)
     cols = [c for c in ["date", "value", "unit", "ref_low", "ref_high", "flag", "vendor", "source", "page"] if c in dff.columns]
-    return dff[cols].to_dict(orient="records")
+    return [_sanitize(r) for r in dff[cols].to_dict(orient="records")]
 
 
 @traceable
@@ -164,7 +173,7 @@ def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
             out_of_range = "HIGH"
 
     # TODO: Use LABS_PROCESSED_COLS
-    return {
+    return _sanitize({
         "analyte": str(last.get("analyte", analyte)),
         "count": int(len(dff)),
         "first_date": dff.iloc[0].get("date"),
@@ -181,7 +190,7 @@ def summary(analyte: str, table_path: Optional[str] = None) -> Optional[Dict]:
         "flag": last.get("flag"),
         "out_of_range": out_of_range,
         "vendor": last.get("vendor"),
-    }
+    })
 
 
 def latest_panel(limit: int = 15, table_path: Optional[str] = None) -> List[Dict]:
@@ -211,4 +220,4 @@ def latest_panel(limit: int = 15, table_path: Optional[str] = None) -> List[Dict
     cols = [c for c in preferred_cols if c in panel.columns]
     if not cols:
         cols = [c for c in LABS_PROCESSED_COLS if c in panel.columns]
-    return panel[cols].to_dict(orient="records")
+    return [_sanitize(r) for r in panel[cols].to_dict(orient="records")]

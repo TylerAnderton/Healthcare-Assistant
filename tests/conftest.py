@@ -31,6 +31,12 @@ def pytest_addoption(parser):
         default=False,
         help="Disable chat-level tests (enabled by default)",
     )
+    parser.addoption(
+        "--run-eval",
+        action="store_true",
+        default=False,
+        help="Run RAGAS and G-Eval evaluation tests (skipped by default)",
+    )
 
 
 def pytest_configure(config):

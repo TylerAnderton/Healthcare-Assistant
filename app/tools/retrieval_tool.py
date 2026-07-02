@@ -1,5 +1,6 @@
 import os
 import logging
+from functools import lru_cache
 from typing import List, Optional, Set
 
 from langchain_core.documents import Document
@@ -16,7 +17,10 @@ except Exception:
     MAX_CONTEXT_DOCS = None
 
 
+@lru_cache(maxsize=1)
 def _get_embeddings():
+    # Cached — the embedding model is large (e.g. bge-large ~1.3GB); loading a
+    # second copy per ragas_evaluator run caused real memory pressure on 16GB.
     from langchain_huggingface.embeddings import HuggingFaceEmbeddings
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
